@@ -23,11 +23,17 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   // Cors Setup
   //-----------------------------------------
   router.Use(cors.New(cors.Config{
-    AllowOrigins:         []string{"http://localhost:3000"},
-    AllowMethods:         []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
-    AllowHeaders:         []string{"Authorization", "Content-Type", "X-Requested-With"},
-    AllowCredentials:     true,
-  }))
+    AllowOrigins: []string{
+        "http://localhost:3000",
+        "http://slotter.ai",
+        "https://www.slotter.ai",
+        "https://slotter.ai",      // prod
+        "https://www.slotter.ai",  // optional www
+    },
+    AllowMethods:     []string{"GET","POST","PUT","DELETE","PATCH","OPTIONS"},
+    AllowHeaders:     []string{"Authorization","Content-Type","X-Requested-With"},
+    AllowCredentials: true,
+}))
 
   //-----------------------------------------
   // Public Routes
