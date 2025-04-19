@@ -8,7 +8,7 @@ import (
   "github.com/gin-gonic/gin"
   "github.com/google/uuid"
 
-  "github.com/slotter-org/slotter-backend/logger"
+  "github.com/slotter-org/slotter-backend/internal/logger"
   "github.com/slotter-org/slotter-backend/internal/requestdata"
   "github.com/slotter-org/slotter-backend/internal/repos"
   "github.com/slotter-org/slotter-backend/internal/services"
