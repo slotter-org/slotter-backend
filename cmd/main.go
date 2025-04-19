@@ -14,7 +14,7 @@ import (
   "github.com/slotter-org/slotter-backend/internal/socket"
   "github.com/slotter-org/slotter-backend/internal/handlers"
   "github.com/slotter-org/slotter-backend/internal/middleware"
-  "github.com/slotter-org/slotter/backend/internal/server"
+  "github.com/slotter-org/slotter-backend/internal/server"
 )
 
 func main() {
