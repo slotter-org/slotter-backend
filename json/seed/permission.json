@@ -1,0 +1,14 @@
+[
+  {
+    "name": "ManageRoles",
+    "permission_type": "manage_roles"
+  },
+  {
+    "name": "ManageInvitations",
+    "permission_type": "manage_invitations"
+  },
+  {
+    "name": "ManageAvatar",
+    "permission_type": "manage_avatar"
+  }
+]
