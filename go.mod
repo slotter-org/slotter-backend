@@ -1,6 +1,8 @@
 module github.com/slotter-org/slotter-backend
 
-go 1.24.1
+go 1.23.0
+
+toolchain go1.24.2
 
 require (
 	cloud.google.com/go/storage v1.51.0
