@@ -1,4 +1,4 @@
-module github.com/yungbote/slotter/backend
+module github.com/slotter-org/slotter-backend
 
 go 1.24.1
 

@@ -5,16 +5,16 @@ import (
   "os"
   "time"
   
-  "github.com/yungbote/slotter/backend/internal/logger"
-  "github.com/yungbote/slotter/backend/internal/utils"
-  "github.com/yungbote/slotter/backend/internal/db"
-  "github.com/yungbote/slotter/backend/internal/seed"
-  "github.com/yungbote/slotter/backend/internal/repos"
-  "github.com/yungbote/slotter/backend/internal/services"
-  "github.com/yungbote/slotter/backend/internal/socket"
-  "github.com/yungbote/slotter/backend/internal/handlers"
-  "github.com/yungbote/slotter/backend/internal/middleware"
-  "github.com/yungbote/slotter/backend/internal/server"
+  "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/utils"
+  "github.com/slotter-org/slotter-backend/internal/db"
+  "github.com/slotter-org/slotter-backend/internal/seed"
+  "github.com/slotter-org/slotter-backend/internal/repos"
+  "github.com/slotter-org/slotter-backend/internal/services"
+  "github.com/slotter-org/slotter-backend/internal/socket"
+  "github.com/slotter-org/slotter-backend/internal/handlers"
+  "github.com/slotter-org/slotter-backend/internal/middleware"
+  "github.com/slotter-org/slotter/backend/internal/server"
 )
 
 func main() {

@@ -4,8 +4,8 @@ import (
   "github.com/gin-gonic/gin"
   "github.com/gin-contrib/cors"
 
-  "github.com/yungbote/slotter/backend/internal/handlers"
-  "github.com/yungbote/slotter/backend/internal/middleware"
+  "github.com/slotter-org/slotter-backend/internal/handlers"
+  "github.com/slotter-org/slotter-backend/internal/middleware"
 )
 
 type RouterConfig struct {

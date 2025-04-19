@@ -7,7 +7,7 @@ import (
   
   twilio "github.com/twilio/twilio-go"
   openapi "github.com/twilio/twilio-go/rest/api/v2010"
-  "github.com/yungbote/slotter/backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/logger"
 )
 
 type TextService interface {

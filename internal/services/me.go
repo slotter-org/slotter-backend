@@ -7,10 +7,10 @@ import (
   "gorm.io/gorm"
   "github.com/google/uuid"
 
-  "github.com/yungbote/slotter/backend/internal/logger"
-  "github.com/yungbote/slotter/backend/internal/requestdata"
-  "github.com/yungbote/slotter/backend/internal/types"
-  "github.com/yungbote/slotter/backend/internal/repos"
+  "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/requestdata"
+  "github.com/slotter-org/slotter-backend/internal/types"
+  "github.com/slotter-org/slotter-backend/internal/repos"
 )
 
 type MeService interface {

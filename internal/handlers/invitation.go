@@ -5,8 +5,8 @@ import (
   
   "github.com/gin-gonic/gin"
 
-  "github.com/yungbote/slotter/backend/internal/types"
-  "github.com/yungbote/slotter/backend/internal/services"
+  "github.com/slotter-org/slotter-backend/internal/types"
+  "github.com/slotter-org/slotter-backend/internal/services"
 )
 
 type InvitationHandler struct {

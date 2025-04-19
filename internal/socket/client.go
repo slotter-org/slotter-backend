@@ -9,7 +9,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/google/uuid"
 	
-	"github.com/yungbote/slotter/backend/internal/logger"
+	"github.com/slotter-org/slotter-backend/internal/logger"
 )
 
 type InboundMessage struct {

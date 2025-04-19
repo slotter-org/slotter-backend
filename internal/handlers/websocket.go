@@ -6,9 +6,9 @@ import (
   "github.com/gin-gonic/gin"
   "github.com/gorilla/websocket"
   
-  "github.com/yungbote/slotter/backend/internal/logger"
-  "github.com/yungbote/slotter/backend/internal/requestdata"
-  "github.com/yungbote/slotter/backend/internal/socket"
+  "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/requestdata"
+  "github.com/slotter-org/slotter-backend/internal/socket"
 )
 
 var upgrader = websocket.Upgrader{

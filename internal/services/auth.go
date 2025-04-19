@@ -11,12 +11,12 @@ import (
   "github.com/golang-jwt/jwt/v5"
   "github.com/google/uuid"
 
-  "github.com/yungbote/slotter/backend/internal/normalization"
-  "github.com/yungbote/slotter/backend/internal/logger"
-  "github.com/yungbote/slotter/backend/internal/types"
-  "github.com/yungbote/slotter/backend/internal/repos"
-  "github.com/yungbote/slotter/backend/internal/requestdata"
-  "github.com/yungbote/slotter/backend/internal/utils"
+  "github.com/slotter-org/slotter-backend/internal/normalization"
+  "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/types"
+  "github.com/slotter-org/slotter-backend/internal/repos"
+  "github.com/slotter-org/slotter-backend/internal/requestdata"
+  "github.com/slotter-org/slotter-backend/internal/utils"
 )
 
 type JWTClaims struct {

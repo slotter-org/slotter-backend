@@ -4,7 +4,7 @@ import (
   "os"
   "strconv"
 
-  "github.com/yungbote/slotter/backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/logger"
 )
 
 func GetEnv(key, defaultVal string, log *logger.Logger) string {

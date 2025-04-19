@@ -8,7 +8,7 @@ import (
   "github.com/sendgrid/sendgrid-go"
   "github.com/sendgrid/sendgrid-go/helpers/mail"
 
-  "github.com/yungbote/slotter/backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/logger"
 )
 
 type EmailService interface {

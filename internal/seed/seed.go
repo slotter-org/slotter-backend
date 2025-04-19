@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"gorm.io/gorm"
 
-	"github.com/yungbote/slotter/backend/internal/repos"
-	"github.com/yungbote/slotter/backend/internal/seed/permission"
+	"github.com/slotter-org/slotter-backend/internal/repos"
+	"github.com/slotter-org/slotter-backend/internal/seed/permission"
 )
 
 func SeedAll(

@@ -4,7 +4,7 @@ import (
   "net/http"
   "github.com/gin-gonic/gin"
 
-  "github.com/yungbote/slotter/backend/internal/services"
+  "github.com/slotter-org/slotter-backend/internal/services"
 )
 
 type MeHandler struct {

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/yungbote/slotter/backend/internal/logger"
+	"github.com/slotter-org/slotter-backend/internal/logger"
 )
 
 type RedisPubSub struct {

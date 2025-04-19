@@ -6,8 +6,8 @@ import (
     "github.com/google/uuid"
     "gorm.io/gorm"
     
-    "github.com/yungbote/slotter/backend/internal/logger"
-    "github.com/yungbote/slotter/backend/internal/types"
+    "github.com/slotter-org/slotter-backend/internal/logger"
+    "github.com/slotter-org/slotter-backend/internal/types"
 )
 
 type UserTokenRepo interface {

@@ -6,10 +6,10 @@ import (
 
   "golang.org/x/crypto/bcrypt"
 
-  "github.com/yungbote/slotter/backend/internal/normalization"
-  "github.com/yungbote/slotter/backend/internal/logger"
-  "github.com/yungbote/slotter/backend/internal/types"
-  "github.com/yungbote/slotter/backend/internal/repos"
+  "github.com/slotter-org/slotter-backend/internal/normalization"
+  "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/types"
+  "github.com/slotter-org/slotter-backend/internal/repos"
 )
 
 func InputValidation (ctx context.Context, ffor string, userRepo repos.UserRepo, log  *logger.Logger, user *types.User, newCompanyName, newWmsName string) error {

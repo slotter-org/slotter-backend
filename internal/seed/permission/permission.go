@@ -9,8 +9,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/google/uuid"
-	"github.com/yungbote/slotter/backend/internal/repos"
-	"github.com/yungbote/slotter/backend/internal/types"
+	"github.com/slotter-org/slotter-backend/internal/repos"
+	"github.com/slotter-org/slotter-backend/internal/types"
 )
 
 func SyncPermissions(
