@@ -1,0 +1,51 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          install_components: "gke-gcloud-auth-plugin"
+          project_id: slotter-457502
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials slotter-dev-ap --region us-central1 --project slotter-457502
+      - name: Update image & rollout
+        run: |
+          DEPLOY=backend-slotter
+          CONTAINER=$DEPLOY
+          NEW_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          kubectl -n slotter set image deploy/$DEPLOY $CONTAINER=$NEW_IMAGE
+          kubectl -n slotter rollout status deploy/$DEPLOY
