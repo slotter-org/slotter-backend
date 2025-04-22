@@ -26,6 +26,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
     AllowOrigins: []string{
         "http://localhost:3000",
         "http://slotter.ai",
+        "http://www.slotter.ai",
         "https://www.slotter.ai",
         "https://slotter.ai",      // prod
         "https://www.slotter.ai",  // optional www
