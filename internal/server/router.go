@@ -39,13 +39,17 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   //-----------------------------------------
   // Public Routes
   //-----------------------------------------
-  router.POST("/register", cfg.AuthHandler.Register)
-  router.POST("/login", cfg.AuthHandler.Login)
+  api := router.Group("/api")
+  {
+    api.POST("/register", cfg.AuthHandler.Register)
+    api.POST("/login", cfg.AuthHandler.Login)
+  }
+
 
   //------------------------------------------
   // Protected Routes
   //------------------------------------------
-  protected := router.Group("/")
+  protected := api.Group("/")
   protected.Use(cfg.AuthMiddleware.RequireAuth())
   protected.POST("/refresh", cfg.AuthHandler.Refresh)
   protected.POST("/logout", cfg.AuthHandler.Logout)
