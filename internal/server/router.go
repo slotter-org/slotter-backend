@@ -37,6 +37,11 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 }))
 
   //-----------------------------------------
+  // Health Routes
+  //-----------------------------------------
+  router.GET("/healthz", handlers.Healthz)
+
+  //-----------------------------------------
   // Public Routes
   //-----------------------------------------
   api := router.Group("/api")
