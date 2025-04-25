@@ -12,6 +12,8 @@ type RouterConfig struct {
   AuthHandler           *handlers.AuthHandler
   AuthMiddleware        *middleware.AuthMiddleware
   MeHandler             *handlers.MeHandler
+  MyCompanyHandler      *handlers.MyCompanyHandler
+  MyWmsHandler          *handlers.MyWmsHandler
   InvitationHandler     *handlers.InvitationHandler
   WsHandler             gin.HandlerFunc
 }
@@ -65,6 +67,10 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   protected.GET("/mywms", cfg.MeHandler.GetMyWms)
   protected.GET("/mycompany", cfg.MeHandler.GetMyCompany)
   protected.GET("/myroles", cfg.MeHandler.GetMyRole)
+
+  //MyCompany/MyWms
+  protected.GET("/mycompany/warehouses", cfg.MyCompanyHandler.GetMyWarehouses)
+  protected.GET("/mywms/companies", cfg.MyWmsHandler.GetMyCompanies)
 
   //Invitations
   invitations := protected.Group("/invitations")

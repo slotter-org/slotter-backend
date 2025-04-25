@@ -120,6 +120,8 @@ func main() {
   }
   authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
+  myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo)
+  myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo)
   invitationService := services.NewInvitationService(thePG, log, invitationRepo, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, textService, emailService)
   log.Info("Services Set Up From Main Successful :)")
 
@@ -128,6 +130,8 @@ func main() {
   log.Info("Setting Up Handlers from Main now...")
   authHandler := handlers.NewAuthHandler(authService)
   meHandler := handlers.NewMeHandler(meService)
+  myCompanyHandler := handlers.NewMyCompanyHandler(myCompanyService)
+  myWmsHandler := handlers.NewMyWmsHandler(myWmsService)
   invitationHandler := handlers.NewInvitationHandler(invitationService)
   wsHandler := handlers.WsHandler(wsHub, log)
   log.Info("Handlers Set Up From Main Successful :)")
@@ -143,6 +147,8 @@ func main() {
     AuthHandler:            authHandler,
     AuthMiddleware:         authMiddleware,
     MeHandler:              meHandler,
+    MyCompanyHandler:       myCompanyHandler,
+    MyWmsHandler:           myWmsHandler,
     InvitationHandler:      invitationHandler,
     WsHandler:              wsHandler,
   })
