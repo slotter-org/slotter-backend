@@ -1,0 +1,88 @@
+package services
+
+import (
+  "context"
+  "fmt"
+  
+  "github.com/google/uuid"
+  "gorm.io/gorm"
+
+  "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/requestdata"
+  "github.com/slotter-org/slotter-backend/internal/repos"
+  "github.com/slotter-org/slotter-backend/internal/types"
+)
+
+type MyWmsService interface {
+  GetMyCompanies(ctx context.Context, tx *gorm.DB) ([]types.Company, error)
+  GetMyCompaniesWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Company, error)
+}
+
+type myWmsService struct {
+  db              *gorm.DB
+  log             *logger.Logger
+  companyRepo     repos.CompanyRepo
+  wmsRepo         repos.WmsRepo
+}
+
+func NewMyWmsService(
+  db            *gorm.DB,
+  log           *logger.Logger,
+  companyRepo   repos.CompanyRepo,
+  wmsRepo       repos.WmsRepo,
+) MyWmsService {
+  serviceLog := log.With("service", "MyWmsService")
+  return &myWmsService{
+    db:           db,
+    log:          serviceLog,
+    companyRepo:  companyRepo,
+    wmsRepo:      wmsRepo,
+  }
+}
+
+func (ws *myWmsService) GetMyCompanies(ctx context.Context, tx *gorm.DB) ([]types.Company, error) {
+  if tx != nil {
+    return nil, fmt.Errorf("Please use GetMyCompaniesWithTransaction if you already have a transaction")
+  }
+  var results []types.Company
+  err := ws.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+    comps, cErr := ws.GetMyCompaniesWithTransaction(ctx, innerTx)
+    if cErr != nil {
+      return cErr
+    }
+    for _, c := range comps {
+      results = append(results, *c)
+    }
+    return nil
+  })
+  if err != nil {
+    return nil, err
+  }
+  return results, nil
+}
+
+func (ws *myWmsService) GetMyCompaniesWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Company, error) {
+  if tx == nil {
+    ws.log.Warn("GetMyCompaniesWithTransaction called with nil transaction")
+    return nil, fmt.Errorf("Transaction is required and cannot be nil")
+  }
+  rd := requestdata.GetRequestData(ctx)
+  if rd == nil {
+    ws.log.Warn("Request Data is not set in context.")
+    return nil, fmt.Errorf("Request Data not set in context")
+  }
+  if rd.WmsID == nil || rd.WmsID == uuid.Nil {
+    ws.log.Warn("No WmsID in Request Data. The user might be a company user or missing data.")
+    return nil, fmt.Errorf("User does not have a valid WmsID in Request Data")
+  }
+  comps, err := ws.companyRepo.GetByWmsIDs(ctx, tx, []uuid.UUID{rd.WmsID})
+  if err != nil {
+    ws.log.Warn("Failed to fetch companies by WmsID", "error", err)
+    return nil, err
+  }
+  if len(comps) == 0 {
+    ws.log.Debug("No companies found for the user's Wms", "WmsID", rd.WmsID)
+  }
+  ws.log.Info("Fetched companies for the user's Wms", "count", len(comps))
+  return comps, nil
+}
