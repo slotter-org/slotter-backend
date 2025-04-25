@@ -57,102 +57,126 @@ func NewWarehouseService(
   }
 }
 
-func (ws *warehouseService) CreateWarehouse(ctx context.Context, newWarehouseName string, companyID uuid.UUID) (*types.Warehouse, error) {
-  rd := requestdata.GetRequestData(ctx)
-  if rd == nil {
-    ws.log.Warn("Request Data is not set in context.")
-    return fmt.Errorf("Request Data is not set in context.")
-  }
-  if rd.UserID == uuid.Nil {
-    ws.log.Warn("User ID not set in RequestData.")
-    return fmt.Errorf("User ID not set in Request Data.")
-  }
-  if rd.UserType == "" {
-    ws.log.Warn("UserType not set in RequestData.")
-    return fmt.Errorf("UserType not set in Request Data.")
-  }
-  var theWarehouse types.Warehouse
-  if err := ws.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-    switch rd.UserType {
-    case "wms":
-      if companyID == nil || companyID == uuid.Nil {
-        ws.log.Warn("Wms user is trying to create a Warehouse but companyID is nil || uuid.Nil. Cannot Proceed.")
-        return fmt.Errorf("Wms user is trying to create a Warehouse with no attached companyID")
-      }
-      companies, cgErr := ws.companyRepo.GetByIDs(ctx, tx, []uuid.UUID{companyID})
-      if cgErr != nil {
-        ws.log.Warn("Error fetching company by company ID", "error", cgErr)
-        return cgErr
-      }
-      if len(companies) == 0 {
-        ws.log.Warn("No companies found with the passed in company ID")
-        return fmt.Errorf("No found companies with that company ID")
-      }
-      theCompany := *companies[0]
-      if theCompany.WmsID == nil || theCompany.WmsID == uuid.Nil {
-        ws.log.Warn("The company given is not associated with any wms")
-        return fmt.Errorf("The company given is not associated with any wms")
-      }
-      if theCompany.WmsID != rd.WmsID {
-        ws.log.Warn("The company given is not associated with the same wms as the user making the request")
-        return fmt.Errorf("The company given is not associated with the same wms as the user making the request")
-      }
-      if newWarehouseName == "" {
-        ws.log.Warn("Warehouse cannot be created because no new name was given")
-        return fmt.Errorf("Warehouse cannot be created because no new name was given")
-      }
-      exists, weErr := ws.warehouseRepo.NameExistsForCompany(ctx, tx, companyID, newWarehouseName)
-      if weErr != nil {
-        ws.log.Warn("Failed to check whether warehouse name already exists under company in question", "error", weErr)
-        return fmt.Errorf("Failed to check whether warehouse name exists for company: %w", weErr)
-      }
-      if exists {
-        ws.log.Warn("Warehouse name already in use within given company")
-        return fmt.Errorf("Warehouse name already in use within given company")
-      }
-      theWarehouse.Name = strings.ToLower(strings.TrimSpace(newWarehouseName))
-      theWarehouse.CompanyID = companyID
-    
-    case "company":
-      if rd.CompanyID == nil || rd.CompanyID == uuid.Nil {
-        ws.log.Warn("User is of type 'company' but no company ID exists in Request Data.")
-        return fmt.Errorf("User of type 'company' has no CompanyID in Request Data.")
-      }
-      if newWarehouseName == "" {
-        ws.log.Warn("Warehouse cannot be created because no new name was given.")
-        return fmt.Errorf("Warehouse cannot be created because no new name was given.")
-      }
-      exists, weErr := ws.warehouseRepo.NameExistsForCompany(ctx, tx, rd.CompanyID, newWarehouseName)
-      if weErr != nil {
-        ws.log.Warn("Failed to check whether warehouse name already exists under company in question", "error", weErr)
-        return fmt.Errorf("Failed to check whether warehouse name exists for company: %w", weErr)
-      }
-      if exists {
-        ws.log.Warn("Warehouse name already in use within given company")
-        return fmt.Errorf("Warehouse name already in use within given company")
-      }
-      theWarehouse.Name = strings.ToLower(strings.TrimSpace(newWarehouseName))
-      theWarehouse.CompanyID = rd.CompanyID
-
-    default:
-      ws.log.Warn("Invalid user type for creating a warehouse", "userType", rd.UserType)
-      return fmt.Errorf("Invalid userType '%s' for creating a warehouse", rd.UserType)
+func (ws *warehouseService) CreateWarehouse(
+  ctx context.Context,
+  newWarehouseName string,
+  companyID uuid.UUID,
+) (*types.Warehouse, error) {
+  var theWarehouse *types.Warehouse
+  err := ws.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+    w, createErr := ws.CreateWarehouseWithTransaction(ctx, tx, newWarehouseName, companyID)
+    if createErr != nil {
+      return createErr
     }
-
-    created, cErr := ws.warehouseRepo.Create(ctx, tx, []*types.Warehouse{&theWarehouse})
-    if cErr != nil {
-      ws.log.Warn("Failed to create new warehouse", "error", cErr)
-      return fmt.Errorf("Failed to create new warehouse: %w", cErr )
-    }
-    if len(created) == 0 {
-      ws.log.Warn("No warehouse was actually created, unexpected empty result")
-      return fmt.Errorf("warehouse creation returned empty result")
-    }
-    theWarehouse = *created[0]
+    theWarehouse = w
     return nil
   })
   if err != nil {
     return nil, err
   }
+  return theWarehouse, nil
+}
+
+func (ws *warehouseService) CreateWarehouseWithTransaction(
+  ctx context.Context,
+  tx *gorm.DB,
+  newWarehouseName string,
+  companyID uuid.UUID,
+) (*types.Warehouse, error) {
+  if tx == nil {
+    ws.log.Warn("CreateWarehouseWithTransaction called with nil transaction")
+    return nil, fmt.Errorf("transaction cannot be nil")
+  }
+  rd := requestdata.GetRequestData(ctx)
+  if rd == nil {
+    ws.log.Warn("Request Data is not set in context.")
+    return nil, fmt.Errorf("Request Data is not set in context.")
+  }
+  if rd.UserID == uuid.Nil {
+    ws.log.Warn("User ID not set in RequestData.")
+    return nil, fmt.Errorf("User ID not set in Request Data.")
+  }
+  if rd.UserType == "" {
+    ws.log.Warn("UserType not set in RequestData.")
+    return nil, fmt.Errorf("UserType not set in Request Data.")
+  }
+
+  var theWarehouse types.Warehouse
+  switch rd.UserType {
+  case "wms":
+    if companyID == uuid.Nil {
+      ws.log.Warn("Wms user is trying to create a Warehouse but companyID is nil || uuid.Nil. Cannot Proceed.")
+      return nil, fmt.Errorf("Wms user is trying to create a Warehouse with no attached companyID")
+    }
+    companies, cgErr := ws.companyRepo.GetByIDs(ctx, tx, []uuid.UUID{companyID})
+    if cgErr != nil {
+      ws.log.Warn("Error fetching company by company ID", "error", cgErr)
+      return nil, cgErr
+    }
+    if len(companies) == 0 {
+      ws.log.Warn("No companies found with the passed in company ID")
+      return nil, fmt.Errorf("No found companies with that company ID")
+    }
+    theCompany := *companies[0]
+    if theCompany.WmsID == nil || theCompany.WmsID == uuid.Nil {
+      ws.log.Warn("The company given is not associated with any wms")
+      return nil, fmt.Errorf("The company given is not associated with any wms")
+    }
+    if theCompany.WmsID != rd.WmsID {
+      ws.log.Warn("The company given is not associated with the same wms as the user making the request")
+      return nil, fmt.Errorf("The company given is not associated with the same wms as the user making the request")
+    }
+    if newWarehouseName == "" {
+      ws.log.Warn("Warehouse cannot be created because no new name was given")
+      return nil, fmt.Errorf("Warehouse cannot be created because no new name was given")
+    }
+    exists, weErr := ws.warehouseRepo.NameExistsForCompany(ctx, tx, companyID, newWarehouseName)
+    if weErr != nil {
+      ws.log.Warn("Failed to check whether warehouse name already exists under company in question", "error", weErr)
+      return nil, fmt.Errorf("Failed to check whether warehouse name exists for company: %w", weErr)
+    }
+    if exists {
+      ws.log.Warn("Warehouse name already in use within given company")
+      return nil, fmt.Errorf("Warehouse name already in use within given company")
+    }
+    theWarehouse.Name = strings.ToLower(strings.TrimSpace(newWarehouseName))
+    theWarehouse.CompanyID = companyID
+
+  case "company":
+    if rd.CompanyID == uuid.Nil {
+      ws.log.Warn("User is of type 'company' but no company ID exists in Request Data.")
+      return nil, fmt.Errorf("User of type 'company' has no CompanyID in Request Data.")
+    }
+    if newWarehouseName == "" {
+      ws.log.Warn("Warehouse cannot be created because no new name was given.")
+      return nil, fmt.Errorf("Warehouse cannot be created because no new name was given.")
+    }
+    exists, weErr := ws.warehouseRepo.NameExistsForCompany(ctx, tx, rd.CompanyID, newWarehouseName)
+    if weErr != nil {
+      ws.log.Warn("Failed to check whether warehouse name already exists under company in question", "error", weErr)
+      return nil, fmt.Errorf("Failed to check whether warehouse name exists for company: %w", weErr)
+    }
+    if exists {
+      ws.log.Warn("Warehouse name already in use within given company")
+      return nil, fmt.Errorf("Warehouse name already in use within given company")
+    }
+    theWarehouse.Name = strings.ToLower(strings.TrimSpace(newWarehouseName))
+    theWarehouse.CompanyID = rd.CompanyID
+
+  default:
+    ws.log.Warn("Invalid user type for creating a warehouse", "userType", rd.UserType)
+    return nil, fmt.Errorf("Invalid userType '%s' for creating a warehouse", rd.UserType)
+  }
+  created, cErr := ws.warehouseRepo.Create(ctx, tx, []*types.Warehouse{&theWarehouse})
+  if cErr != nil {
+    ws.log.Warn("Failed to create new warehouse", "error", cErr)
+    return nil, fmt.Errorf("Failed to create new warehouse: %w", cErr)
+  }
+  if len(created) == 0 {
+    ws.log.Warn("No warehouse was actually created, unexpected empty result")
+    return nil, fmt.Errorf("warehouse creation returned empty result")
+  }
+  theWarehouse = *created[0]
+
   return &theWarehouse, nil
 }
