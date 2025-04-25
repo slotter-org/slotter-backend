@@ -63,6 +63,7 @@ func main() {
   log.Info("Setting Up Repositories from Main now...")
   wmsRepo := repos.NewWmsRepo(thePG, log)
   companyRepo := repos.NewCompanyRepo(thePG, log)
+  warehouseRepo := repos.NewWarehouseRepo(thePG, log)
   userRepo := repos.NewUserRepo(thePG, log)
   permissionRepo := repos.NewPermissionRepo(thePG, log)
   roleRepo := repos.NewRoleRepo(thePG, log)

@@ -75,6 +75,8 @@ func (s *PostgresService) AutoMigrateAll() error {
     &types.OneTimeCode{},
     &types.UserToken{},
     &types.Invitation{},
+    &types.ChatSession{},
+    &types.ChatMessage{},
   )
   if err != nil {
     s.log.Error("AutoMigrateAll failed for Base Tables :(", "error", err)
@@ -232,6 +234,26 @@ func (s *PostgresService) AutoMigrateAll() error {
       ON DELETE CASCADE
   `).Error; err != nil {
       return fmt.Errorf("failed to add fk_invitation_company_id: %w", err)
+  }
+  // -- ChatSession
+  if err := s.db.Exec(`
+      ALTER TABLE "chat_session"
+      ADD CONSTRAINT "fk_chat_session_user_id"
+      FOREIGN KEY ("user_id")
+      REFERENCES "user" ("id")
+      ON DELETE CASCADE
+  `).Error; err != nil {
+    return fmt.Errorf("failed to add fk_chat_session_user_id: %w", err)
+  }
+  // -- ChatMessage
+  if err := s.db.Exec(`
+      ALTER TABLE "chat_message"
+      ADD CONSTRAINT "fk_chat_message_session_id"
+      FOREIGN KEY ("session_id")
+      REFERENCES "chat_session" ("id")
+      ON DELETE CASCADE
+  `).Error; err != nil {
+    return fmt.Errorf("failed to add fk_chat_message_session_id: %w", err)
   }
   s.log.Info("Successfully Added Foreign Key Relationships to Base Tables :)")
 
