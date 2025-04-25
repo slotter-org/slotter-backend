@@ -123,6 +123,7 @@ func main() {
   myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo)
   myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo)
   invitationService := services.NewInvitationService(thePG, log, invitationRepo, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, textService, emailService)
+  warehouseService := services.NewWarehouseService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, warehouseRepo)
   log.Info("Services Set Up From Main Successful :)")
 
 
@@ -133,6 +134,7 @@ func main() {
   myCompanyHandler := handlers.NewMyCompanyHandler(myCompanyService)
   myWmsHandler := handlers.NewMyWmsHandler(myWmsService)
   invitationHandler := handlers.NewInvitationHandler(invitationService)
+  warehouseHandler := handlers.NewWarehouseHandler(warehouseService)
   wsHandler := handlers.WsHandler(wsHub, log)
   log.Info("Handlers Set Up From Main Successful :)")
 
@@ -150,6 +152,7 @@ func main() {
     MyCompanyHandler:       myCompanyHandler,
     MyWmsHandler:           myWmsHandler,
     InvitationHandler:      invitationHandler,
+    WarehouseHandler:       warehouseHandler,
     WsHandler:              wsHandler,
   })
   log.Info("Router Set Up From Main Successful :)")
