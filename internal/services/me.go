@@ -24,6 +24,7 @@ type MeService interface {
   GetMyCompanyWithTransaction(ctx context.Context, tx *gorm.DB) (*types.Company, error)
 
   GetMyRole(ctx context.Context, tx *gorm.DB) (types.Role, error)
+  GetMyRoleWithTransaction(ctx context.Context, tx *gorm.DB) (*types.Role, error)
 }
 
 type meService struct {
