@@ -18,7 +18,7 @@ type WarehouseService interface {
   CreateWarehouse(ctx context.Context, newWarehouseName string, companyID uuid.UUID) (*types.Warehouse, error)
   CreateWarehouseWithTransaction(ctx context.Context, tx *gorm.DB, newWarehouseName string, companyID uuid.UUID) (*types.Warehouse, error)
   UpdateWarehouseName(ctx context.Context, warehouse *types.Warehouse, newWarehouseName string) (*types.Warehouse, error)
-  UpdateWarehouseWithTransaction(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse, newWarehouseName string) (*types.Warehouse, error) 
+  UpdateWarehouseNameWithTransaction(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse, newWarehouseName string) (*types.Warehouse, error) 
   DeleteWarehouse(ctx context.Context, warehouse *types.Warehouse) error
   DeleteWarehouseWithTransaction(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) error
 }
@@ -179,4 +179,106 @@ func (ws *warehouseService) CreateWarehouseWithTransaction(
   theWarehouse = *created[0]
 
   return &theWarehouse, nil
+}
+
+func (ws *warehouseService) UpdateWarehouseName(ctx context.Context, warehouse *types.Warehouse, newWarehouseName string) (*types.Warehouse, error) {
+  var updated *types.Warehouse
+  err := ws.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+    w, upErr := ws.UpdateWarehouseWithTransaction(ctx, tx, warehouse, newWarehouseName)
+    if upErr != nil {
+      return upErr
+    }
+    updated = w
+    return nil
+  })
+  if err != nil {
+    return nil, err
+  }
+  return updated, nil
+}
+
+func (ws *warehouseService) UpdateWarehouseNameWithTransaction(
+  ctx context.Context,
+  tx *gorm.DB,
+  warehouse *types.Warehouse,
+  newWarehouseName string,
+) (*types.Warehouse, error) {
+  if tx == nil {
+    ws.log.Warn("UpdateWarehouseNameWithTransaction called with nil transaction")
+    return nil, fmt.Errorf("transaction cannot be nil")
+  }
+  rd := requestdata.GetRequestData(ctx)
+  if rd == nil {
+    ws.log.Warn("Request Data is not set in context.")
+    return nil, fmt.Errorf("Request Data is not set in context.")
+  }
+  if rd.UserID == uuid.Nil {
+    ws.log.Warn("User ID not set in RequestData.")
+    return nil, fmt.Errorf("User ID not set in Request Data.")
+  }
+  if rd.UserType == "" {
+    ws.log.Warn("UserType not set in RequestData.")
+    return nil, fmt.Errorf("UserType not set in Request Data.")
+  }
+  if warehouse == nil || warehouse.ID == uuid.Nil {
+    ws.log.Warn("No valid warehouse object provided")
+    return nil, fmt.Errorf("Warehouse object is nil or has no valid UUID")
+  }
+  if warehouse.CompanyID == uuid.Nil {
+    ws.log.Warn("The warehouse object has no associated company, cannot update name.")
+    return nil, fmt.Errorf("Cannot update warehouse name with no associated company")
+  }
+  if strings.TrimSpace(newWarehouseName) == "" {
+    ws.log.Warn("New Warehouse name is empty or whitespace")
+    return nil, fmt.Errorf("New warehouse name cannot be empty.")
+  }
+  switch rd.UserType {
+  case "wms":
+    companies, cErr := ws.companyRepo.GetByIDs(ctx, tx, []uuid.UUID{warehouse.CompanyID})
+    if cErr != nil {
+      ws.log.Warn("Failed to fetch warehouse's company for update name", "error", cErr)
+      return nil, cErr
+    }
+    if len(companies) == 0 {
+      ws.log.Warn("No company found matching warehouse's companyID during update.")
+      return nil, fmt.Errorf("no matching company found for warehouse's companyID")
+    }
+    theCompany := companies[0]
+    if theCompany.WmsID == nil || *theCompany.WmsID != rd.WmsID {
+      ws.log.Warn("Warehouse's company does not belong to the same WMS as the user")
+      return nil, fmt.Errorf("The warehouse's company does not match the user's wms")
+    }
+  
+  case "company":
+    if rd.CompanyID != warehouse.CompanyID {
+      ws.log.Warn("Company user tried to update a warehouse from another company")
+      return nil, fmt.Errorf("Cannot update warehouse belonging to another company")
+    }
+  
+  default:
+    ws.log.Warn("Invalid userType for updating a warehouse name", "userType", rd.UserType)
+    return nil, fmt.Errorf("invalid userType '%s' for updating a warehouse name", rd.UserType)
+  }
+  exists, weErr := ws.warehouseRepo.NameExistsForCompany(ctx, tx, warehouse.CompanyID, newWarehouseName)
+  if weErr != nil {
+    ws.log.Warn("Failed to check if new warehouse name already exists within given company", "error", weErr)
+    return nil, fmt.Errorf("Failed checking new warehouse name: %w", weErr)
+  }
+  if exists {
+    ws.log.Warn("Attempting to rename warehouse but that name is already in use for the given company.")
+    return nil, fmt.Errorf("Warehouse name is already in use under the given company")
+  }
+  oldName := warehouse.Name
+  warehouse.Name = strings.ToLower(strings.TrimSpace(newWarehouseName))
+  updated, uErr := ws.warehouseRepo.Update(ctx, tx, []*types.Warehouse{warehouse})
+  if uErr != nil {
+    ws.log.Warn("Failed to update warehouse name in DB", "error", uErr)
+    return nil, fmt.Errorf("Failed to update warehouse name: %w", uErr)
+  }
+  if len(updated) == 0 {
+    ws.log.Warn("No Warehouses updated, unexpected empty slice.")
+    return nil, fmt.Errorf("No warehouse was updated - unexpected empty result")
+  }
+  ws.log.Info("Warehouse name updated successfully", "oldName", oldName, "newName", updated[0].Name)
+  return updated[0], nil
 }
