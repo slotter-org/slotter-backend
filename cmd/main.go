@@ -134,7 +134,7 @@ func main() {
   myCompanyHandler := handlers.NewMyCompanyHandler(myCompanyService)
   myWmsHandler := handlers.NewMyWmsHandler(myWmsService)
   invitationHandler := handlers.NewInvitationHandler(invitationService)
-  warehouseHandler := handlers.NewWarehouseHandler(warehouseService)
+  warehouseHandler := handlers.NewWarehouseHandler(warehouseService, wsHub)
   wsHandler := handlers.WsHandler(wsHub, log)
   log.Info("Handlers Set Up From Main Successful :)")
 
