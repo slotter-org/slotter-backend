@@ -2,6 +2,7 @@ package repos
 
 import (
     "context"
+    "strings"
     
     "github.com/google/uuid"
     "gorm.io/gorm"
@@ -13,7 +14,9 @@ import (
 
 type WarehouseRepo interface {
     Create(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) ([]*types.Warehouse, error)
-    GetByIDs(ctx context.Contesxt, tx *gorm.DB, warehouseIDs []uuid.UUID) ([]*types.Warehouse, error)
+    GetByIDs(ctx context.Context, tx *gorm.DB, warehouseIDs []uuid.UUID) ([]*types.Warehouse, error)
+    GetByCompanyID(ctx context.Context, tx *gorm.DB, companyID uuid.UUID) ([]*types.Warehouse, error)
+    NameExistsForCompany(ctx context.Context, tx *gorm.DB, companyID uuid.UUID) (bool, error)
     Update(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) ([]*types.Warehouse, error)
     SoftDeleteByWarehouses(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) error
     SoftDeleteByWarehouseIDs(ctx context.Contex, tx *gorm.DB, warehouseIDs []uuid.UUID) error
@@ -84,6 +87,62 @@ func (wr *warehouseRepo) GetByIDs(ctx context.Context, tx *gorm.DB, warehouseIDs
     wr.log.Info("Successfully fetch warehouses by IDs", "count", len(results))
     wr.log.Debug("Warehouses fetched", "warehouses", results)
     return results, nil
+}
+
+func (wr *warehouseRepo) GetByCompanyID(ctx context.Context, tx *gorm.DB, companyID uuid.UUID) ([]*types.Warehouse, error) {
+    wr.log.Info("Starting GetByCompanyID for warehouses...")
+    transaction := tx
+    if transaction == nil {
+        transaction = wr.db
+        wr.log.Debug("Transaction is nil, using wr.db", "db", transaction)
+    } else {
+        wr.log.Debug("Transaction is not nil", "transaction", transaction)
+    }
+    var results []*types.Warehouse
+    if companyID == uuid.Nil {
+        wr.log.Debug("companyID is nil, returning empty slice")
+        return results, nil
+    }
+    wr.log.Debug("companyID provided", "companyID", companyID)
+    wr.log.Info("Fetching warehouses by companyID with SELECT FOR UPDATE...")
+    if err := transaction.WithContext(ctx).
+        Clauses(clause.Locking{Strenght: "UPDATE"}).
+        Where("company_id = ?", companyID).
+        Find(&results).Error; err != nil {
+        wr.log.Error("Failed to fetch (and lock) warehouses by companyID", "error", err)
+        return nil, err
+    }
+    wr.log.Info("Successfully fetched and locked warehouses by companyID", "count", len(results))
+    wr.log.Debug("Warehouses locked/fetched", "warehouses", results)
+    return results, nil
+}
+
+func (wr *warehouseRepo) NameExistsForCompany(ctx context.Context, tx *gorm.DB, companyID uuid.UUID, warehouseName string) (bool, error) {
+    wr.log.Info("Checking if Warehouse name exists for the given company...")
+    if companyID == uuid.Nil {
+        wr.log.Warn("CompanyID is nil, returning false early")
+        return false, nil
+    }
+    nameToCheck := strings.TrimSpace(warehouseName)
+    if nameToCheck == "" {
+        wr.log.Warn("Warehouse name is empty, skipping check")
+        return false, nil
+    }
+    transaction := tx
+    if transaction == nil {
+        transaction = wr.db
+        wr.log.Debug("Using wr.db because transaction is nil")
+    }
+    var count int64
+    if err := transaction.WithContext(ctx).
+        Model(&types.Warehouse{}).
+        Where("company_id = ? AND name = ?", companyID, nameToCheck).
+        Count(&count).Error; err != nil {
+        wr.log.Error("Failed to count warehouses for name check", "error", err)
+        return false, err
+    }
+    wr.log.Debug("NameExistsForCompany completed", "companyID", companyID, "warehouseName", warehouseName, "count", count)
+    return count > 0, nil
 }
 
 func (wr *warehouseRepo) Update(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) ([]*types.Warehouse, error) {
