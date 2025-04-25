@@ -282,3 +282,75 @@ func (ws *warehouseService) UpdateWarehouseNameWithTransaction(
   ws.log.Info("Warehouse name updated successfully", "oldName", oldName, "newName", updated[0].Name)
   return updated[0], nil
 }
+
+func (ws *warehouseService) DeleteWarehouse(ctx context.Context, warehouse *types.Warehouse) error {
+  return ws.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+    return ws.DeleteWarehouseWithTransaction(ctx, tx, warehouse)
+  })
+}
+
+func (ws *warehouseService) DeleteWarehouseWithTransaction(
+  ctx context.Context,
+  tx *gorm.DB,
+  warehouse *types.Warehouse,
+) error {
+  if tx == nil {
+    ws.log.Warn("DeleteWarehouseWithTransaction called with nil transaction.")
+    return fmt.Errorf("Transaction cannot be nil")
+  }
+  rd := requestdata.GetRequestData(ctx)
+  if rd == nil {
+    ws.log.Warn("Request Data is not set in context.")
+    return fmt.Errorf("Request Data is not set in context")
+  }
+  if rd.UserID == uuid.Nil {
+    ws.log.Warn("User ID not set in RequestData.")
+    return fmt.Errorf("User ID not set in Request Data")
+  }
+  if rd.UserType == "" {
+    ws.log.Warn("UserType not set in RequestData.")
+    return fmt.Errorf("UserType not set in Request Data")
+  }
+  if warehouse == nil || warehouse.ID == uuid.Nil {
+    ws.log.Warn("DeleteWarehouse called with nil or invalid warehouse.")
+    return fmt.Errorf("Invalid warehouse (nil or missing ID)")
+  }
+  if warehouse.CompanyID == nil || warehouse.CompanyID == uuid.Nil {
+    ws.log.Warn("Warehouse has no associated company, cannot delete.")
+    return fmt.Errorf("Warehouse has no associated company - cannot delete")
+  }
+  switch rd.UserType {
+  case "wms":
+    companies, cErr := ws.companyRepo.GetByIDs(ctx, tx, []uuid.UUID{warehouse.CompanyID})
+    if cErr != nil {
+      ws.log.Warn("Error loading warehouse's company for deletion", "error", cErr)
+      return cErr
+    }
+    if len(companies) == 0 {
+      ws.log.Warn("No matching company for warehouse.CompanyID; cannot delete warehouse.")
+      return fmt.Errorf("No matching company for warehouse; cannot delete")
+    }
+    theCompany := companies[0]
+    if theCompany.WmsID == nil || *theCompany.WmsID != rd.WmsID {
+      ws.log.Warn("User's wms does not match the warehouse's company's WMS.")
+      return fmt.Errorf("Cannot delete warehouse that belongs doesnt belong to a company under given wms")
+    }
+  
+  case "company":
+    if rd.CompanyID != warehouse.CompanyID {
+      ws.log.Warn("Company user tried to delete a warehouse from another company.")
+      return fmt.Errorf("Cannot delete a warehouse that belongs to another company")
+    }
+
+  default:
+    ws.log.Warn("Invalid userType for deleting a warehouse", "userType", rd.UserType)
+    return fmt.Errorf("Invalid userType '%s' for deleting a warehouse", rd.UserType)
+  }
+  delErr := ws.warehouseRepo.FullDeleteByWarehouses(ctx, tx, []*types.Warehouse{warehouse})
+  if delErr != nil {
+    ws.log.Warn("Failed to delete warehouse from DB", "error", delErr)
+    return fmt.Errorf("Failed to delete warehouse: %w", delErr)
+  }
+  ws.log.Info("Warehouse successfully deleted", "warehouseID", warehouse.ID)
+  return nil
+}
