@@ -120,8 +120,8 @@ func main() {
   }
   authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
-  myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo)
-  myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo)
+  myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo)
+  myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo, userRepo, roleRepo)
   invitationService := services.NewInvitationService(thePG, log, invitationRepo, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, textService, emailService)
   warehouseService := services.NewWarehouseService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, warehouseRepo)
   log.Info("Services Set Up From Main Successful :)")

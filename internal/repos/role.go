@@ -13,21 +13,18 @@ import (
 type RoleRepo interface {
     // CREATE
     Create(ctx context.Context, tx *gorm.DB, roles []*types.Role) ([]*types.Role, error)
-
     // READ
     GetByIDs(ctx context.Context, tx *gorm.DB, roleIDs []uuid.UUID) ([]*types.Role, error)
-
+    GetByWmsIDs(ctx context.Context, tx *gorm.DB, wmsIDs []uuid.UUID) ([]*types.Role, error)
+    GetByCompanyIDs(ctx context.Context, tx *gorm.DB, companyIDs []uuid.UUID) ([]*types.Role, error)
     // UPDATE
     Update(ctx context.Context, tx *gorm.DB, roles []*types.Role) ([]*types.Role, error)
-
     // SOFT DELETE
     SoftDeleteByRoles(ctx context.Context, tx *gorm.DB, roles []*types.Role) error
     SoftDeleteByRoleIDs(ctx context.Context, tx *gorm.DB, roleIDs []uuid.UUID) error
-
     // FULL (HARD) DELETE
     FullDeleteByRoles(ctx context.Context, tx *gorm.DB, roles []*types.Role) error
     FullDeleteByRoleIDs(ctx context.Context, tx *gorm.DB, roleIDs []uuid.UUID) error
-
     // PERMISSIONS
     AssociatePermissionsByIDs(ctx context.Context, tx *gorm.DB, roleIDs, permissionIDs []uuid.UUID) error
     UnassociatePermissionsByIDs(ctx context.Context, tx *gorm.DB, roleIDs, permissionIDs []uuid.UUID) error
@@ -115,6 +112,60 @@ func (rr *roleRepo) GetByIDs(ctx context.Context, tx *gorm.DB, roleIDs []uuid.UU
         return nil, err
     }
     rr.log.Info("Successfully fetched roles by IDs", "count", len(results))
+    rr.log.Debug("Roles fetched", "roles", results)
+    return results, nil
+}
+
+func (rr *roleRepo) GetByWmsIDs(ctx context.Context, tx *gorm.DB, wmsIDs []uuid.UUID) ([]*types.Role, error) {
+    rr.log.Info("Starting GetByWmsIDs for roles...")
+    
+    transaction := tx
+    if transaction == nil {
+        transaction = rr.db
+        rr.log.Debug("Transaction is nil, using rr.db")
+    }
+    var results []*types.Role
+    if len(wmsIDs) == 0 {
+        rr.log.Debug("No wmsIDs provided, returning empty slice")
+        return results, nil
+    }
+    rr.log.Debug("wmsIDs provided", "count", len(wmsIDs), "wmsIDs", wmsIDs)
+    rr.log.Info("Fetching roles by wmsIDs now...")
+    if err := transaction.WithContext(ctx).
+        Preload("Permissions").
+        Where("wms_id IN ?", wmsIDs).
+        Find(&results).Error; err != nil {
+        rr.log.Error("Failed to fetch roles by wmsIDs", "error", err)
+        return nil, err
+    }
+    rr.log.Info("Successfully fetched roles by wmsIDs", "count", len(results))
+    rr.log.Debug("Roles fetched", "roles", results)
+    return results, nil
+}
+
+func (rr *roleRepo) GetByCompanyIDs(ctx context.Context, tx *gorm.DB, companyIDs []uuid.UUID) ([]*types.Role, error) {
+    rr.log.Info("Starting GetByCompanyIDs for roles...")
+
+    transaction := tx
+    if transaction == nil {
+        transaction = rr.db
+        rr.log.Debug("Transaction is nil, using rr.db")
+    }
+    var results []*types.Role
+    if len(companyIDs) == 0 {
+        rr.log.Debug("No companyIDs provided, returning empty slice")
+        return results, nil
+    }
+    rr.log.Debug("companyIDs provided", "count", len(companyIDs), "companyIDs", companyIDs)
+    rr.log.Info("Fetching roles by companyIDs now...")
+    if err := transaction.WithContext(ctx).
+        Preload("Permissions").
+        Where("company_id IN ?", companyIDs).
+        Find(&results).Error; err != nil {
+        rr.log.Error("Failed to fetch roles by companyIDs", "error", err)
+        return nil, err
+    }
+    rr.log.Info("Successfully fetched roles by companyIDs", "count", len(results))
     rr.log.Debug("Roles fetched", "roles", results)
     return results, nil
 }

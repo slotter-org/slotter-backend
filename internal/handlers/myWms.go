@@ -24,4 +24,23 @@ func (mwh *MyWmsHandler) GetMyCompanies(c *gin.Context) {
   c.JSON(http.StatusOK, gin.H{"myCompanies": myCompanies})
 }
 
+func (mwh *MyWmsHandler) GetMyUsers(c *gin.Context) {
+  myUsers, err := mwh.myWmsService.GetMyUsers(c.Request.Context(), nil)
+  if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
+  c.JSON(http.StatusOK, gin.H{"myUsers": myUsers})
+}
+
+func (mwh *MyWmsHandler) GetMyRoles(c *gin.Context) {
+  myRoles, err := mwh.myWmsService.GetMyRoles(c.Request.Context(), nil)
+  if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
+  c.JSON(http.StatusOK, gin.H{"myRoles": myRoles})
+}
+
+
 
