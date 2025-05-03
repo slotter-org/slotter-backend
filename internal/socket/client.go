@@ -12,111 +12,174 @@ import (
 	"github.com/slotter-org/slotter-backend/internal/logger"
 )
 
-type InboundMessage struct {
-	Action			string					`json:"action,omitempty"`
-	Channel			string					`json:"channel,omitempty"`
-}
+package socket
 
-const (
-	OutboundChanBuffer = 256
-	WriteWait = 10 * time.Second
-	PongWait = 60 * time.Second
-	PingInterval = (PongWait * 9) / 10
+import (
+	"context"
+	"encoding/json"
+	"net"
+	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/google/uuid"
+
+	"github.com/slotter-org/slotter-backend/internal/logger"
 )
 
-type Client struct {
-	ID						uuid.UUID
-	Conn					*websocket.Conn
-	Hub						*Hub
-	logger				*logger.Logger
-	cancelFn			context.CancelFunc
-	Outbound			chan Message
+//---------------------------------------------------------------------
+// Public message formats  (unchanged)
+//---------------------------------------------------------------------
+type InboundMessage struct {
+	Action  string `json:"action,omitempty"`  // "subscribe" | "unsubscribe" | …
+	Channel string `json:"channel,omitempty"` // channel name, etc.
 }
 
-func NewClient(conn *websocket.Conn, hub *Hub, log *logger.Logger) *Client {
+type Message struct {
+	Channel string      `json:"channel,omitempty"`
+	Payload interface{} `json:"payload,omitempty"`
+}
+
+//---------------------------------------------------------------------
+// Tunables  (unchanged)
+//---------------------------------------------------------------------
+const (
+	OutboundChanBuffer = 256
+
+	writeWait  = 10 * time.Second
+	pongWait   = 60 * time.Second
+	pingPeriod = (pongWait * 9) / 10
+)
+
+//---------------------------------------------------------------------
+// Client
+//---------------------------------------------------------------------
+type Client struct {
+	ID        uuid.UUID
+	Conn      *websocket.Conn
+	Hub       *Hub
+	Log       *logger.Logger
+	cancelFn  context.CancelFunc
+	Outbound  chan Message
+}
+
+// NewClient constructs a fully-initialised Client.  The cancel function comes
+// from the handler so the HTTP context can finish while the WS lives on.
+func NewClient(conn *websocket.Conn, hub *Hub, uid uuid.UUID,
+	cancel context.CancelFunc, log *logger.Logger) *Client {
+
 	return &Client{
-		ID:					uuid.New(),
-		Conn:				conn,
-		Hub:				hub,
-		logger:			log,
-		Outbound:		make(chan Message, OutboundChanBuffer),
+		ID:       uid,
+		Conn:     conn,
+		Hub:      hub,
+		Log:      log,
+		cancelFn: cancel,
+		Outbound: make(chan Message, OutboundChanBuffer),
 	}
 }
 
-func (c *Client) Run(ctx context.Context) {
-	ctx, cancel := context.WithCancel(ctx)
-	c.cancelFn = cancel
-	go c.writeLoop(ctx)
-	c.readLoop(ctx)
-}
+//---------------------------------------------------------------------
+// Public entry-points – invoked from handlers
+//---------------------------------------------------------------------
+func (c *Client) ReadLoop(ctx context.Context) { c.readLoop(ctx) }
+func (c *Client) WriteLoop(ctx context.Context) { c.writeLoop(ctx) }
 
+//---------------------------------------------------------------------
+// readLoop – inbound → Hub
+//---------------------------------------------------------------------
 func (c *Client) readLoop(ctx context.Context) {
-	defer c.Close()
-	c.Conn.SetReadDeadline(time.Now().Add(PongWait))
-	c.Conn.SetPongHandler(func(string) error {
-		_ = c.Conn.SetReadDeadline(time.Now().Add(PongWait))
+	defer c.close()
+
+	c.Conn.SetReadLimit(1 << 20)                           // 1 MiB
+	_ = c.Conn.SetReadDeadline(time.Now().Add(pongWait))   // initial deadline
+	c.Conn.SetPongHandler(func(string) error {             // keep-alive handler
+		_ = c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
+
 	for {
-		_, data, err := c.Conn.ReadMessage()
-		if err != nil {
-			netErr, ok := err.(net.Error)
-			if !ok || !netErr.Temporary() {
-				c.logger.Debug("Websocket read error => closing client", "error", err)
-				break
-			}
-		}
-		var inbound InboundMessage
-		if err := json.Unmarshal(data, &inbound); err != nil {
-			c.logger.Debug("Failed to unmarshal inbound message", "error", err, "raw", string(data))
-			continue
-		}
-		switch inbound.Action {
-		case "subscribe":
-			if inbound.Channel != "" {
-				c.Hub.Subscribe(c, []string{inbound.Channel})
-				c.logger.Debug("Client requested subscribe", "channel", inbound.Channel, "client", c.ID)
-			}
-		case "unsubscribe":
-			if inbound.Channel != "" {
-				c.Hub.UnsubscribeFromChannel(c, inbound.Channel)
-				c.logger.Debug("Client requested unsubscribe", "channel", inbound.Channel, "client", c.ID)
-			}
+		select {
+		case <-ctx.Done():
+			return
+
 		default:
-			c.logger.Debug("Inbound WebSocket message unhandled", "client", c.ID, "message", inbound)
+			_, data, err := c.Conn.ReadMessage()
+			if err != nil {
+				if ne, ok := err.(net.Error); !ok || !ne.Temporary() {
+					c.Log.Debug("websocket read error → closing client", "error", err)
+					return
+				}
+				continue
+			}
+
+			var inbound InboundMessage
+			if err := json.Unmarshal(data, &inbound); err != nil {
+				c.Log.Debug("failed to unmarshal inbound message",
+					"error", err, "raw", string(data))
+				continue
+			}
+
+			switch inbound.Action {
+			case "subscribe":
+				if inbound.Channel != "" {
+					c.Hub.Subscribe(c, []string{inbound.Channel})
+					c.Log.Debug("client subscribed",
+						"channel", inbound.Channel, "client", c.ID)
+				}
+			case "unsubscribe":
+				if inbound.Channel != "" {
+					c.Hub.UnsubscribeFromChannel(c, inbound.Channel)
+					c.Log.Debug("client unsubscribed",
+						"channel", inbound.Channel, "client", c.ID)
+				}
+			default:
+				c.Log.Debug("inbound WS message unhandled",
+					"client", c.ID, "message", inbound)
+			}
 		}
 	}
 }
 
+//---------------------------------------------------------------------
+// writeLoop – Hub → outbound
+//---------------------------------------------------------------------
 func (c *Client) writeLoop(ctx context.Context) {
-	ticker := time.NewTicker(PingInterval)
-	defer ticker.Stop()
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.close()
+	}()
+
 	for {
 		select {
+		case <-ctx.Done():
+			c.Log.Debug("writeLoop ctx done → shutdown", "client", c.ID)
+			return
+
 		case msg, ok := <-c.Outbound:
-			c.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				c.logger.Debug("Outbound channel closed, shutting down writeLoop", "client", c.ID)
+				c.Log.Debug("outbound channel closed → shutdown", "client", c.ID)
 				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 			if err := c.writeJSON(msg); err != nil {
-				c.logger.Warn("Failed writing JSON to client", "client", c.ID, "error", err)
+				c.Log.Warn("failed writing JSON", "client", c.ID, "error", err)
 				return
 			}
-		case <-ticker.C:
-			c.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
+
+		case <-ticker.C: // keep-alive ping
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.logger.Debug("Ping error => shutting down client", "client", c.ID, "error", err)
+				c.Log.Debug("ping error → shutdown", "client", c.ID, "error", err)
 				return
 			}
-		case <-ctx.Done():
-			c.logger.Debug("writeLoop context done => shutting down", "client", c.ID)
-			return
 		}
 	}
 }
 
+//---------------------------------------------------------------------
+// utilities
+//---------------------------------------------------------------------
 func (c *Client) writeJSON(v interface{}) error {
 	payload, err := json.Marshal(v)
 	if err != nil {
@@ -126,18 +189,17 @@ func (c *Client) writeJSON(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	_, writeErr := w.Write(payload)
-	closeErr := w.Close()
-	if writeErr != nil {
-		return writeErr
+	if _, err = w.Write(payload); err != nil {
+		_ = w.Close()
+		return err
 	}
-	return closeErr
+	return w.Close()
 }
 
-func (c *Client) Close() {
-	c.logger.Debug("Closing client connection", "client", c.ID)
+func (c *Client) close() {
+	c.Log.Debug("closing client connection", "client", c.ID)
 	if c.cancelFn != nil {
-		c.cancelFn()
+		c.cancelFn() // stop the sibling pump
 	}
 	_ = c.Conn.Close()
 	close(c.Outbound)
