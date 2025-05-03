@@ -12,20 +12,6 @@ import (
 	"github.com/slotter-org/slotter-backend/internal/logger"
 )
 
-package socket
-
-import (
-	"context"
-	"encoding/json"
-	"net"
-	"time"
-
-	"github.com/gorilla/websocket"
-	"github.com/google/uuid"
-
-	"github.com/slotter-org/slotter-backend/internal/logger"
-)
-
 //---------------------------------------------------------------------
 // Public message formats  (unchanged)
 //---------------------------------------------------------------------
