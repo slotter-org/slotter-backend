@@ -12,160 +12,113 @@ import (
 	"github.com/slotter-org/slotter-backend/internal/logger"
 )
 
-//---------------------------------------------------------------------
-// Public message formats  (unchanged)
-//---------------------------------------------------------------------
+
+
 type InboundMessage struct {
-	Action  string `json:"action,omitempty"`  // "subscribe" | "unsubscribe" | …
-	Channel string `json:"channel,omitempty"` // channel name, etc.
+	Action			string					`json:"action,omitempty"`
+	Channel			string					`json:"channel,omitempty"`
 }
 
-type Message struct {
-	Channel string      `json:"channel,omitempty"`
-	Payload interface{} `json:"payload,omitempty"`
-}
-
-//---------------------------------------------------------------------
-// Tunables  (unchanged)
-//---------------------------------------------------------------------
 const (
 	OutboundChanBuffer = 256
-
-	writeWait  = 10 * time.Second
-	pongWait   = 60 * time.Second
-	pingPeriod = (pongWait * 9) / 10
+	WriteWait = 10 * time.Second
+	PongWait = 60 * time.Second
+	PingInterval = (PongWait * 9) / 10
 )
 
-//---------------------------------------------------------------------
-// Client
-//---------------------------------------------------------------------
 type Client struct {
-	ID        uuid.UUID
-	Conn      *websocket.Conn
-	Hub       *Hub
-	Log       *logger.Logger
-	cancelFn  context.CancelFunc
-	Outbound  chan Message
+	ID						uuid.UUID
+	Conn					*websocket.Conn
+	Hub						*Hub
+	logger				*logger.Logger
+	cancelFn			context.CancelFunc
+	Outbound			chan Message
 }
 
-// NewClient constructs a fully-initialised Client.  The cancel function comes
-// from the handler so the HTTP context can finish while the WS lives on.
-func NewClient(conn *websocket.Conn, hub *Hub, uid uuid.UUID,
-	cancel context.CancelFunc, log *logger.Logger) *Client {
-
+func NewClient(conn *websocket.Conn, hub *Hub, log *logger.Logger) *Client {
 	return &Client{
-		ID:       uid,
-		Conn:     conn,
-		Hub:      hub,
-		Log:      log,
-		cancelFn: cancel,
-		Outbound: make(chan Message, OutboundChanBuffer),
+		ID:					uuid.New(),
+		Conn:				conn,
+		Hub:				hub,
+		logger:			log,
+		Outbound:		make(chan Message, OutboundChanBuffer),
 	}
 }
 
-//---------------------------------------------------------------------
-// Public entry-points – invoked from handlers
-//---------------------------------------------------------------------
-func (c *Client) ReadLoop(ctx context.Context) { c.readLoop(ctx) }
-func (c *Client) WriteLoop(ctx context.Context) { c.writeLoop(ctx) }
+func (c *Client) Run(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	c.cancelFn = cancel
+	go c.writeLoop(ctx)
+	c.readLoop(ctx)
+}
 
-//---------------------------------------------------------------------
-// readLoop – inbound → Hub
-//---------------------------------------------------------------------
 func (c *Client) readLoop(ctx context.Context) {
-	defer c.close()
-
-	c.Conn.SetReadLimit(1 << 20)                           // 1 MiB
-	_ = c.Conn.SetReadDeadline(time.Now().Add(pongWait))   // initial deadline
-	c.Conn.SetPongHandler(func(string) error {             // keep-alive handler
-		_ = c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	defer c.Close()
+	c.Conn.SetReadDeadline(time.Now().Add(PongWait))
+	c.Conn.SetPongHandler(func(string) error {
+		_ = c.Conn.SetReadDeadline(time.Now().Add(PongWait))
 		return nil
 	})
-
 	for {
-		select {
-		case <-ctx.Done():
-			return
-
+		_, data, err := c.Conn.ReadMessage()
+		if err != nil {
+			netErr, ok := err.(net.Error)
+			if !ok || !netErr.Temporary() {
+				c.logger.Debug("Websocket read error => closing client", "error", err)
+				break
+			}
+		}
+		var inbound InboundMessage
+		if err := json.Unmarshal(data, &inbound); err != nil {
+			c.logger.Debug("Failed to unmarshal inbound message", "error", err, "raw", string(data))
+			continue
+		}
+		switch inbound.Action {
+		case "subscribe":
+			if inbound.Channel != "" {
+				c.Hub.Subscribe(c, []string{inbound.Channel})
+				c.logger.Debug("Client requested subscribe", "channel", inbound.Channel, "client", c.ID)
+			}
+		case "unsubscribe":
+			if inbound.Channel != "" {
+				c.Hub.UnsubscribeFromChannel(c, inbound.Channel)
+				c.logger.Debug("Client requested unsubscribe", "channel", inbound.Channel, "client", c.ID)
+			}
 		default:
-			_, data, err := c.Conn.ReadMessage()
-			if err != nil {
-				if ne, ok := err.(net.Error); !ok || !ne.Temporary() {
-					c.Log.Debug("websocket read error → closing client", "error", err)
-					return
-				}
-				continue
-			}
-
-			var inbound InboundMessage
-			if err := json.Unmarshal(data, &inbound); err != nil {
-				c.Log.Debug("failed to unmarshal inbound message",
-					"error", err, "raw", string(data))
-				continue
-			}
-
-			switch inbound.Action {
-			case "subscribe":
-				if inbound.Channel != "" {
-					c.Hub.Subscribe(c, []string{inbound.Channel})
-					c.Log.Debug("client subscribed",
-						"channel", inbound.Channel, "client", c.ID)
-				}
-			case "unsubscribe":
-				if inbound.Channel != "" {
-					c.Hub.UnsubscribeFromChannel(c, inbound.Channel)
-					c.Log.Debug("client unsubscribed",
-						"channel", inbound.Channel, "client", c.ID)
-				}
-			default:
-				c.Log.Debug("inbound WS message unhandled",
-					"client", c.ID, "message", inbound)
-			}
+			c.logger.Debug("Inbound WebSocket message unhandled", "client", c.ID, "message", inbound)
 		}
 	}
 }
 
-//---------------------------------------------------------------------
-// writeLoop – Hub → outbound
-//---------------------------------------------------------------------
 func (c *Client) writeLoop(ctx context.Context) {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		c.close()
-	}()
-
+	ticker := time.NewTicker(PingInterval)
+	defer ticker.Stop()
 	for {
 		select {
-		case <-ctx.Done():
-			c.Log.Debug("writeLoop ctx done → shutdown", "client", c.ID)
-			return
-
 		case msg, ok := <-c.Outbound:
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			c.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			if !ok {
-				c.Log.Debug("outbound channel closed → shutdown", "client", c.ID)
+				c.logger.Debug("Outbound channel closed, shutting down writeLoop", "client", c.ID)
 				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 			if err := c.writeJSON(msg); err != nil {
-				c.Log.Warn("failed writing JSON", "client", c.ID, "error", err)
+				c.logger.Warn("Failed writing JSON to client", "client", c.ID, "error", err)
 				return
 			}
-
-		case <-ticker.C: // keep-alive ping
-			_ = c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+		case <-ticker.C:
+			c.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				c.Log.Debug("ping error → shutdown", "client", c.ID, "error", err)
+				c.logger.Debug("Ping error => shutting down client", "client", c.ID, "error", err)
 				return
 			}
+		case <-ctx.Done():
+			c.logger.Debug("writeLoop context done => shutting down", "client", c.ID)
+			return
 		}
 	}
 }
 
-//---------------------------------------------------------------------
-// utilities
-//---------------------------------------------------------------------
 func (c *Client) writeJSON(v interface{}) error {
 	payload, err := json.Marshal(v)
 	if err != nil {
@@ -175,17 +128,18 @@ func (c *Client) writeJSON(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	if _, err = w.Write(payload); err != nil {
-		_ = w.Close()
-		return err
+	_, writeErr := w.Write(payload)
+	closeErr := w.Close()
+	if writeErr != nil {
+		return writeErr
 	}
-	return w.Close()
+	return closeErr
 }
 
-func (c *Client) close() {
-	c.Log.Debug("closing client connection", "client", c.ID)
+func (c *Client) Close() {
+	c.logger.Debug("Closing client connection", "client", c.ID)
 	if c.cancelFn != nil {
-		c.cancelFn() // stop the sibling pump
+		c.cancelFn()
 	}
 	_ = c.Conn.Close()
 	close(c.Outbound)

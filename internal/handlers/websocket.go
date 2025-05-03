@@ -37,32 +37,20 @@ func WsHandlerr(hub *socket.Hub, log *logger.Logger) gin.HandlerFunc {
 }
 
 func WsHandler(hub *socket.Hub, log *logger.Logger) gin.HandlerFunc {
-  return func(c *gin.Context) {
-    if err := middleware.requireAuth(c); err != nil {
-      c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-      return
-    }
-    reqData := requestdata.GetRequestData(c.Request.Context())
-    if reqData == nil || reqData.UserID == uuid.Nil {
-      c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user"})
-      return
-    }
-    conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-    if err != nil {
-      log.Warn("websocket upgrade failed", "error", err)
-      return
-    }
-    ctx, cancel := context.WithCancel(context.Background())
-    client := socket.NewClient(
-      hub,
-      reqData.UserID,
-      conn,
-      cancel,
-      log,
-    )
-    hub.Register <- client
+	return func(c *gin.Context) {
+		rd := requestdata.GetRequestData(c.Request.Context())
+		if rd == nil || rd.UserID == [16]byte{} {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "not authenticated"})
+			return
+		}
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Warn("Failed to upgrade to WebSocket", "error", err)
+			return
+		}
+		client := socket.NewClient(conn, hub, log)
 
-    go client.ReadPump(ctx)
-    go client.WritePump(ctx)
-  }
+		go client.Run(context.Background())
+	}
 }
+
