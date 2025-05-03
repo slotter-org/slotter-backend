@@ -16,10 +16,10 @@ type WarehouseRepo interface {
     Create(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) ([]*types.Warehouse, error)
     GetByIDs(ctx context.Context, tx *gorm.DB, warehouseIDs []uuid.UUID) ([]*types.Warehouse, error)
     GetByCompanyID(ctx context.Context, tx *gorm.DB, companyID uuid.UUID) ([]*types.Warehouse, error)
-    NameExistsForCompany(ctx context.Context, tx *gorm.DB, companyID uuid.UUID) (bool, error)
+    NameExistsForCompany(ctx context.Context, tx *gorm.DB, companyID uuid.UUID, warehouseName string) (bool, error)
     Update(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) ([]*types.Warehouse, error)
     SoftDeleteByWarehouses(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) error
-    SoftDeleteByWarehouseIDs(ctx context.Contex, tx *gorm.DB, warehouseIDs []uuid.UUID) error
+    SoftDeleteByWarehouseIDs(ctx context.Context, tx *gorm.DB, warehouseIDs []uuid.UUID) error
     FullDeleteByWarehouses(ctx context.Context, tx *gorm.DB, warehouses []*types.Warehouse) error
     FullDeleteByWarehouseIDs(ctx context.Context, tx *gorm.DB, warehouseIDs []uuid.UUID) error
 }
@@ -106,7 +106,7 @@ func (wr *warehouseRepo) GetByCompanyID(ctx context.Context, tx *gorm.DB, compan
     wr.log.Debug("companyID provided", "companyID", companyID)
     wr.log.Info("Fetching warehouses by companyID with SELECT FOR UPDATE...")
     if err := transaction.WithContext(ctx).
-        Clauses(clause.Locking{Strenght: "UPDATE"}).
+        Clauses(clause.Locking{Strength: "UPDATE"}).
         Where("company_id = ?", companyID).
         Find(&results).Error; err != nil {
         wr.log.Error("Failed to fetch (and lock) warehouses by companyID", "error", err)
@@ -185,7 +185,7 @@ func (wr *warehouseRepo) SoftDeleteByWarehouses(ctx context.Context, tx *gorm.DB
     wr.log.Debug("Soft deleting warehouses by slice", "count", len(warehouses))
     var warehouseIDs []uuid.UUID
     for _, w := range warehouses {
-        warehouse IDs = append(warehouseIDs, w.ID)
+        warehouseIDs = append(warehouseIDs, w.ID)
     }
     wr.log.Debug("Collected warehouseIDs from slice", "warehouseIDs", warehouseIDs)
     wr.log.Info("Performing soft delete by warehouseIDs now...")

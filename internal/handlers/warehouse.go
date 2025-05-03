@@ -51,7 +51,7 @@ func (wh *WarehouseHandler) CreateWarehouse(c *gin.Context) {
 
     if warehouse.CompanyID != uuid.Nil {
         wh.hub.BroadcastGlobal(c.Request.Context(), socket.Message{
-            Channel: "company:" + warehouse.CompanyID.string(),
+            Channel: "company:" + warehouse.CompanyID.String(),
             Data: map[string]interface{}{
                 "action": "warehouse_created",
                 "payload": warehouse,

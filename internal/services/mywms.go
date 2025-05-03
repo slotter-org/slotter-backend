@@ -71,7 +71,7 @@ func (ws *myWmsService) GetMyCompaniesWithTransaction(ctx context.Context, tx *g
     ws.log.Warn("Request Data is not set in context.")
     return nil, fmt.Errorf("Request Data not set in context")
   }
-  if rd.WmsID == nil || rd.WmsID == uuid.Nil {
+  if rd.WmsID == uuid.Nil {
     ws.log.Warn("No WmsID in Request Data. The user might be a company user or missing data.")
     return nil, fmt.Errorf("User does not have a valid WmsID in Request Data")
   }

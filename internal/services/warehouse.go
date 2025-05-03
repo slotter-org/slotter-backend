@@ -3,7 +3,7 @@ package services
 import (
   "context"
   "fmt"
-  "time"
+  "strings"
 
   "gorm.io/gorm"
   "github.com/google/uuid"
@@ -118,11 +118,11 @@ func (ws *warehouseService) CreateWarehouseWithTransaction(
       return nil, fmt.Errorf("No found companies with that company ID")
     }
     theCompany := *companies[0]
-    if theCompany.WmsID == nil || theCompany.WmsID == uuid.Nil {
+    if theCompany.WmsID == nil {
       ws.log.Warn("The company given is not associated with any wms")
       return nil, fmt.Errorf("The company given is not associated with any wms")
     }
-    if theCompany.WmsID != rd.WmsID {
+    if *(theCompany.WmsID) != rd.WmsID {
       ws.log.Warn("The company given is not associated with the same wms as the user making the request")
       return nil, fmt.Errorf("The company given is not associated with the same wms as the user making the request")
     }
@@ -184,7 +184,7 @@ func (ws *warehouseService) CreateWarehouseWithTransaction(
 func (ws *warehouseService) UpdateWarehouseName(ctx context.Context, warehouse *types.Warehouse, newWarehouseName string) (*types.Warehouse, error) {
   var updated *types.Warehouse
   err := ws.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-    w, upErr := ws.UpdateWarehouseWithTransaction(ctx, tx, warehouse, newWarehouseName)
+    w, upErr := ws.UpdateWarehouseNameWithTransaction(ctx, tx, warehouse, newWarehouseName)
     if upErr != nil {
       return upErr
     }
@@ -315,7 +315,7 @@ func (ws *warehouseService) DeleteWarehouseWithTransaction(
     ws.log.Warn("DeleteWarehouse called with nil or invalid warehouse.")
     return fmt.Errorf("Invalid warehouse (nil or missing ID)")
   }
-  if warehouse.CompanyID == nil || warehouse.CompanyID == uuid.Nil {
+  if warehouse.CompanyID == uuid.Nil {
     ws.log.Warn("Warehouse has no associated company, cannot delete.")
     return fmt.Errorf("Warehouse has no associated company - cannot delete")
   }

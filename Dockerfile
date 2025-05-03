@@ -5,11 +5,11 @@ RUN apk add --no-cache git ca-certificates && update-ca-certificates
 WORKDIR /src
 
 # 1) Copy go.mod and go.sum
-COPY go.mod go.sum ./
+COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 
 # 2) Copy everything else in backend/
-COPY . ./
+COPY backend/ ./
 
 # 3) Build the Go binary
 RUN CGO_ENABLED=0 \

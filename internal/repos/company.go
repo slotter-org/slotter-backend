@@ -18,6 +18,8 @@ type CompanyRepo interface {
     // READ
     GetByIDs(ctx context.Context, tx *gorm.DB, companyIDs []uuid.UUID) ([]*types.Company, error)
 
+    GetByWmsIDs(ctx context.Context, tx *gorm.DB, wmsIDs []uuid.UUID) ([]*types.Company, error)
+
     // UPDATE
     Update(ctx context.Context, tx *gorm.DB, companies []*types.Company) ([]*types.Company, error)
 
@@ -103,6 +105,38 @@ func (cr *companyRepo) GetByIDs(ctx context.Context, tx *gorm.DB, companyIDs []u
         return nil, err
     }
     cr.log.Info("Successfully fetched companies by IDs", "count", len(results))
+    cr.log.Debug("Companies fetched", "companies", results)
+    return results, nil
+}
+
+func (cr *companyRepo) GetByWmsIDs(ctx context.Context, tx *gorm.DB, wmsIDs []uuid.UUID) ([]*types.Company, error) {
+    cr.log.Info("Starting Get Companies By Wms IDs now...")
+
+    transaction := tx
+    if transaction == nil {
+        transaction = cr.db
+        cr.log.Debug("Transaction is nil, using cr.db", "db", transaction)
+    } else {
+        cr.log.Debug("Transaction is not nil", "transaction", transaction)
+    }
+
+    var results []*types.Company
+    if len(wmsIDs) == 0 {
+        cr.log.Debug("No wmsIDs provided, returning empty slice")
+        return results, nil
+    }
+    cr.log.Debug("wmsIDs provided", "count", len(wmsIDs), "wmsIDs", wmsIDs)
+    cr.log.Info("Fetching companies by Wms IDs now...")
+    if err := transaction.WithContext(ctx).
+        Clauses(clause.Locking{Strength: "UPDATE"}).
+        Preload("Users").
+        Where("wms_id IN ?", wmsIDs).
+        Find(&results).
+        Error; err != nil {
+        cr.log.Error("Failed to fetch companies by Wms IDs", "error", err)
+        return nil, err
+    }
+    cr.log.Info("Successfully fetched companies by Wms IDs", "count", len(results))
     cr.log.Debug("Companies fetched", "companies", results)
     return results, nil
 }

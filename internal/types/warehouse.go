@@ -4,7 +4,7 @@ import (
   "time"
 
   "github.com/google/uuid"
-  "gorm.io/datatypes"
+  "gorm.io/gorm"
 )
 
 type Warehouse struct {
