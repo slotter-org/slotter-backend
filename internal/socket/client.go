@@ -21,7 +21,7 @@ const (
 	OutboundChanBuffer = 256
 	WriteWait = 10 * time.Second
 	PongWait = 60 * time.Second
-	PingInterval = (PongWait * 9) / 10
+	PingInterval = 25 * time.Second
 )
 
 type Client struct {
