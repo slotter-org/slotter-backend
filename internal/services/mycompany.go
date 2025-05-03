@@ -195,9 +195,9 @@ func (cs *myCompanyService) GetMyRolesWithTransaction(ctx context.Context, tx *g
         return nil, err
     }
     if len(roles) == 0 {
-        ws.log.Debug("No roles found for the users company", "CompanyID", rd.CompanyID)
+        cs.log.Debug("No roles found for the users company", "CompanyID", rd.CompanyID)
     }
-    ws.log.Info("Fetched roles for the users Company", "count", len(roles))
+    cs.log.Info("Fetched roles for the users Company", "count", len(roles))
     return roles, nil
 }
 
