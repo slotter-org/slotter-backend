@@ -10,12 +10,12 @@ import (
 type Warehouse struct {
   gorm.Model
 
-  ID              uuid.UUID             `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-  Name            string                `gorm:"not null;column:name"`
-  CompanyID       uuid.UUID             `gorm:"index;not null"`
-  Company         *Company              `gorm:"contraint:OnDelete:CASCADE;foreignKey:CompanyID;references:ID"`
-  CreatedAt       time.Time             `gorm:"not null;default:now()"`
-  UpdatedAt       time.Time             `gorm:"not null;default:now()"`
+  ID              uuid.UUID             `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
+  Name            string                `gorm:"not null;column:name" json:"name"`
+  CompanyID       uuid.UUID             `gorm:"index;not null" json:"companyID"`
+  Company         *Company              `gorm:"contraint:OnDelete:CASCADE;foreignKey:CompanyID;references:ID" json:"company,omitempty"`
+  CreatedAt       time.Time             `gorm:"not null;default:now()" json:"createdAt"`
+  UpdatedAt       time.Time             `gorm:"not null;default:now()" json:"updatedAt"`
 }
 
 func (Warehouse) TableName() string {
