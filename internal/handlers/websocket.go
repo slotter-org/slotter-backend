@@ -7,7 +7,6 @@ import (
   "github.com/gin-gonic/gin"
   "github.com/gorilla/websocket"
   
-  "github.com/slotter-org/slotter-backend/internal/middleware"
   "github.com/slotter-org/slotter-backend/internal/logger"
   "github.com/slotter-org/slotter-backend/internal/requestdata"
   "github.com/slotter-org/slotter-backend/internal/socket"
