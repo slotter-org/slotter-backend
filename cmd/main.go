@@ -15,6 +15,7 @@ import (
   "github.com/slotter-org/slotter-backend/internal/handlers"
   "github.com/slotter-org/slotter-backend/internal/middleware"
   "github.com/slotter-org/slotter-backend/internal/server"
+  "github.com/slotter-org/slotter-backend/internal/sse"
 )
 
 func main() {
@@ -83,6 +84,11 @@ func main() {
   wsHub := socket.NewHub(log)
   log.Info("Websocket Hub Set Up From Main Successful :)")
 
+  // SSE Hub
+  log.Info("Setting Up SSE Hub From Main Now :)")
+  sseHub := sse.NewSSEHub(log)
+  log.Info("SSE Hub Set Up From Main Successful :)")
+
   // Redis PubSub
   log.Info("Setting Up Redis PubSub From Main Now :)")
   redisChanName := "slotter_hub_broadcast"
@@ -136,6 +142,7 @@ func main() {
   invitationHandler := handlers.NewInvitationHandler(invitationService)
   warehouseHandler := handlers.NewWarehouseHandler(warehouseService, wsHub)
   wsHandler := handlers.WsHandler(wsHub, log)
+  sseHandler := handlers.NewSSEHandler(log, sseHub)
   log.Info("Handlers Set Up From Main Successful :)")
 
   // MiddleWare Setup
@@ -154,6 +161,7 @@ func main() {
     InvitationHandler:      invitationHandler,
     WarehouseHandler:       warehouseHandler,
     WsHandler:              wsHandler,
+    SSEHandler:             sseHandler,
   })
   log.Info("Router Set Up From Main Successful :)")
 

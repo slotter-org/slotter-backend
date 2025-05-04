@@ -17,6 +17,7 @@ type RouterConfig struct {
   InvitationHandler     *handlers.InvitationHandler
   WsHandler             gin.HandlerFunc
   WarehouseHandler      *handlers.WarehouseHandler
+  SSEHandler            *handlers.SSEHandler
 }
 
 func NewRouter(cfg RouterConfig) *gin.Engine {
@@ -62,6 +63,11 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   protected.POST("/refresh", cfg.AuthHandler.Refresh)
   protected.POST("/logout", cfg.AuthHandler.Logout)
   protected.GET("/ws", cfg.WsHandler)
+
+  //SSE
+  protected.GET("/sse/stream", cfg.SSEHandler.SSEStream)
+  protected.POST("/sse/subscribe", cfg.SSEHandler.SSESubscribe)
+  protected.POST("/sse/unsubscribe", cfg.SSEHandler.SSEUnsubscribe)
 
   //ME
   protected.GET("/me", cfg.MeHandler.GetMe)
