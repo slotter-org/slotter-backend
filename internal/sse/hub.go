@@ -1,13 +1,11 @@
 package sse
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/slotter-org/slotter-backend/internal/logger"
