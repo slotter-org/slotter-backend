@@ -171,7 +171,7 @@ func (hub *SSEHub) ServeHTTP(w http.ResponseWriter, r *http.Request, client *SSE
 
 		case <-heartbeat.C:
 			// ":" = comment line in SSE; browsers ignore, LBs see traffic
-			_, _ = fmt.Fprint(w, ": ping\n\n")
+			_, _ = fmt.Fprint(w, ": ping ################################################################################################\n\n")
 			flusher.Flush()
 
 		case msg := <-client.Outbound:
