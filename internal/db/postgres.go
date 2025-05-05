@@ -71,6 +71,7 @@ func (s *PostgresService) AutoMigrateAll() error {
     &types.Role{},
     &types.Company{},
     &types.Wms{},
+    &types.Warehouse{},
     &types.Permission{},
     &types.OneTimeCode{},
     &types.UserToken{},
@@ -254,6 +255,16 @@ func (s *PostgresService) AutoMigrateAll() error {
       ON DELETE CASCADE
   `).Error; err != nil {
     return fmt.Errorf("failed to add fk_chat_message_session_id: %w", err)
+  }
+  // --Warehouse
+  if err := s.db.Exec(`
+    ALTER TABLE "warehouse"
+    ADD CONSTRAINT "fk_warehouse_company_id"
+    FOREIGN KEY ("company_id")
+    REFERENCES "company"("id")
+    ON DELETE CASCADE
+  `).Error; err != nil {
+      return fmt.Errorf("failed to add fk_warehouse_company_id: %w", err)
   }
   s.log.Info("Successfully Added Foreign Key Relationships to Base Tables :)")
 
