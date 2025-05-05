@@ -2,6 +2,7 @@ package sse
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,51 +16,51 @@ import (
 type SSEEvent string
 
 const (
-	SSEEventUserJoined					SSEEvent = "UserJoined"
-	SSEEventUserLeft						SSEEvent = "UserLeft"
-	SSEEventUserAvatarUpdated		SSEEvent = "UserAvatarUpdated"
-	SSEEventUserNameChanged			SSEEvent = "UserNameChanged"
-	SSEEventWarehouseCreated		SSEEvent = "WarehouseCreated"
-	SSEEventWarehouseDeleted		SSEEvent = "WarehouseDeleted"
-	SSEEventCompanyCreated			SSEEvent = "CompanyCreated"
-	SSEEventCompanyDeleted			SSEEvent = "CompanyDeleted"
+	SSEEventUserJoined         SSEEvent = "UserJoined"
+	SSEEventUserLeft           SSEEvent = "UserLeft"
+	SSEEventUserAvatarUpdated  SSEEvent = "UserAvatarUpdated"
+	SSEEventUserNameChanged    SSEEvent = "UserNameChanged"
+	SSEEventWarehouseCreated   SSEEvent = "WarehouseCreated"
+	SSEEventWarehouseDeleted   SSEEvent = "WarehouseDeleted"
+	SSEEventCompanyCreated     SSEEvent = "CompanyCreated"
+	SSEEventCompanyDeleted     SSEEvent = "CompanyDeleted"
 )
 
 type SSEMessage struct {
-	Channel				string					`json:"channel"`
-	Event					SSEEvent				`json:"event"`
+	Channel string   `json:"channel"`
+	Event   SSEEvent `json:"event"`
 }
 
 type SSEClient struct {
-	ID						uuid.UUID
-	UserID				uuid.UUID
-	Channels			map[string]bool
-	Outbound			chan SSEMessage
-	done					chan struct{}
-	logger				*logger.Logger
+	ID       uuid.UUID
+	UserID   uuid.UUID
+	Channels map[string]bool
+	Outbound chan SSEMessage
+	done     chan struct{}
+	Logger   *logger.Logger
 }
 
 type SSEHub struct {
-	mu							sync.RWMutex
-	logger					*logger.Logger
-	subscriptions		map[string]map[*SSEClient]bool
+	mu           sync.RWMutex
+	logger       *logger.Logger
+	subscriptions map[string]map[*SSEClient]bool
 }
 
 func NewSSEHub(log *logger.Logger) *SSEHub {
 	return &SSEHub{
-		logger:					log.With("component", "SSEHub"),
-		subscriptions:	make(map[string]map[*SSEClient]bool),
+		logger: log.With("component", "SSEHub"),
+		subscriptions: make(map[string]map[*SSEClient]bool),
 	}
 }
 
 func (hub *SSEHub) NewSSEClient(userID uuid.UUID) *SSEClient {
 	return &SSEClient{
-		ID:					uuid.New(),
-		UserID:			userID,
-		Channels:		make(map[string]bool),
-		Outbound:   make(chan SSEMessage, 10),
-		done: 			make(chan struct{}),
-		logger:			hub.logger.With("clientID", nil),
+		ID:       uuid.New(),
+		UserID:   userID,
+		Channels: make(map[string]bool),
+		Outbound: make(chan SSEMessage, 10),
+		done:     make(chan struct{}),
+		Logger:   hub.logger.With("clientID", nil),
 	}
 }
 
@@ -74,7 +75,7 @@ func (hub *SSEHub) AddChannel(client *SSEClient, channel string) {
 
 	client.Channels[channel] = true
 
-	clients, exits := hub.subscriptions[channel]
+	clients, exists := hub.subscriptions[channel]
 	if !exists {
 		clients = make(map[*SSEClient]bool)
 		hub.subscriptions[channel] = clients
@@ -139,6 +140,7 @@ func (hub *SSEHub) Broadcast(msg SSEMessage) {
 	}
 }
 
+// ServeHTTP now uses a single "event: message" and writes msg as JSON in "data: ...".
 func (hub *SSEHub) ServeHTTP(w http.ResponseWriter, r *http.Request, client *SSEClient) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -160,20 +162,19 @@ func (hub *SSEHub) ServeHTTP(w http.ResponseWriter, r *http.Request, client *SSE
 		case <-client.done:
 			return
 		case msg := <-client.Outbound:
-			// Format SSE data. Typically looks like:
-      // event: <someChannel>\n
-      // data: <json>\n\n
-      // Or simpler with just `data: ...`
-      _, _ = fmt.Fprintf(w, "event: %s\n", msg.Event)
+			// All events use "event: message" so a single onmessage captures them
+			_, _ = fmt.Fprintf(w, "event: message\n")
 
-      // For demonstration, we'll do a quick JSON marshal:
-      // If you want to avoid overhead, do minimal formatting
-      // or direct strings. 
-      // We’ll do a quick "stringify" for clarity:
-      s := fmt.Sprintf("%v", msg.Channel)
-      _, _ = fmt.Fprintf(w, "data: %s\n\n", s)
+			// Marshal SSEMessage as JSON
+			jsonBytes, err := json.Marshal(msg)
+			if err != nil {
+				hub.logger.Warn("Failed to marshal SSE message", "error", err)
+				continue
+			}
 
-      flusher.Flush()
+			// e.g. data: {"event":"UserJoined","channel":"SomeChannel"}
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", string(jsonBytes))
+			flusher.Flush()
 		}
 	}
 }
@@ -183,3 +184,4 @@ func (hub *SSEHub) CloseClient(client *SSEClient) {
 	hub.RemoveClient(client)
 	close(client.Outbound)
 }
+
