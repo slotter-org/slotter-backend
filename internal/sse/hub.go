@@ -152,13 +152,26 @@ func (hub *SSEHub) ServeHTTP(w http.ResponseWriter, r *http.Request, client *SSE
 	}
 	ctx := r.Context()
 
+	// ──────────────────────────────────────────────────────────────────────
+	// NEW: heartbeat ticker (15 s).  Comment lines keep LB/Ingress alive.
+	// ──────────────────────────────────────────────────────────────────────
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			hub.logger.Debug("SSE client context done", "clientID", client.ID, "err", ctx.Err())
 			return
+
 		case <-client.done:
 			return
+
+		case <-heartbeat.C:
+			// ":" = comment line in SSE; browsers ignore, LBs see traffic
+			_, _ = fmt.Fprint(w, ": ping\n\n")
+			flusher.Flush()
+
 		case msg := <-client.Outbound:
 			// All events use "event: message" so a single onmessage captures them
 			_, _ = fmt.Fprintf(w, "event: message\n")
