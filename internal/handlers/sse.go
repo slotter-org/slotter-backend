@@ -94,7 +94,7 @@ func (h *SSEHandler) SSEUnsubscribe(c *gin.Context) {
     Channel         string      `json:"channel"`
   }
   if err := c.ShouldBindJSON(&req); err != nil || req.Channel == "" {
-    c.JSON{http.StatusBadRequest, gin.H{"error": "invalid channel"}}
+    c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel"})
     return
   }
   h.mu.RLock()
