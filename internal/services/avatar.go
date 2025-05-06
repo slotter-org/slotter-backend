@@ -32,7 +32,7 @@ type AvatarService interface {
   CreateAndUploadCompanyAvatar(ctx context.Context, tx *gorm.DB, company *types.Company) error
   CreateAndUploadUserAvatar(ctx context.Context, tx *gorm.DB, user *types.User) error
   CreateAndUploadWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) error
-  CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) error
+  CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) (*types.Role, error)
 
   GenerateUserAvatar(ctx context.Context, tx *gorm.DB, user *types.User) (bytes.Buffer, error)
   GenerateCompanyAvatar(ctx context.Context, tx *gorm.DB, company *types.Company) (bytes.Buffer, error)
