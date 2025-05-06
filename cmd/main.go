@@ -119,11 +119,12 @@ func main() {
   if err != nil {
     log.Warn("Could not init BucketService", "error", err)
   }
-  avatarService, err := services.NewAvatarService(thePG, log, wmsRepo, companyRepo, userRepo, roleRepo, permissionRepo, bucketService)
+  avatarService, err := services.NewAvatarService(thePG, log, wmsRepo, companyRepo, warehouseRepo, userRepo, roleRepo, permissionRepo, bucketService)
   if err != nil {
     log.Error("Fatal error: Cannot init AvatarService", "error", err)
     os.Exit(1)
   }
+  roleService := services.NewRoleService(thePG, log, roleRepo, avatarService)
   authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
   myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo, invitationRepo)

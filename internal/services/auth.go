@@ -51,6 +51,7 @@ type authService struct {
   wmsRepo           repos.WmsRepo
   companyRepo       repos.CompanyRepo
   roleRepo          repos.RoleRepo
+  roleService       RoleService
   permissionRepo    repos.PermissionRepo
   avatarService     AvatarService
   userTokenRepo     repos.UserTokenRepo
@@ -66,6 +67,7 @@ func NewAuthService(
   wmsRepo           repos.WmsRepo,
   companyRepo       repos.CompanyRepo,
   roleRepo          repos.RoleRepo,
+  roleService       RoleService,
   permissionRepo    repos.PermissionRepo,
   avatarService     AvatarService,
   userTokenRepo     repos.UserTokenRepo,
@@ -81,6 +83,7 @@ func NewAuthService(
     wmsRepo:        wmsRepo,
     companyRepo:    companyRepo,
     roleRepo:       roleRepo,
+    roleService:    RoleService,
     permissionRepo: permissionRepo,
     avatarService:  avatarService,
     userTokenRepo:  userTokenRepo,
@@ -173,7 +176,7 @@ func (as *authService) handleWmsRegistration(ctx context.Context, tx *gorm.DB, u
   if len(foundUsers) == 0 {
     adminRole := &types.Role{WmsID: &theWms.ID, Name: "admin"}
     defaultRole := &types.Role{WmsID: &theWms.ID, Name: "default"}
-    newRoles, nRErr := as.roleRepo.Create(ctx, tx, []*types.Role{adminRole, defaultRole})
+    newRoles, nRErr := as.roleService.Create(ctx, tx, []*types.Role{adminRole, defaultRole})
     if nRErr != nil {
       as.log.Warn("Failed to create admin and default roles for new wms, Cannot proceed further. Returning error.", "error", nRErr)
       return fmt.Errorf("Failure to create admin and default roles for new wms: %w", nRErr)
@@ -258,7 +261,7 @@ func (as *authService) handleCompanyRegistration(ctx context.Context, tx *gorm.D
   if len(foundUsers) == 0 {
     adminRole := &types.Role{CompanyID: &theCompany.ID, Name: "admin"}
     defaultRole := &types.Role{CompanyID: &theCompany.ID, Name: "default"}
-    newRoles, nRErr := as.roleRepo.Create(ctx, tx, []*types.Role{adminRole, defaultRole})
+    newRoles, nRErr := as.roleService.Create(ctx, tx, []*types.Role{adminRole, defaultRole})
     if nRErr != nil {
       as.log.Warn("Failed to create new admin and default roles for new company, Cannot proceed further. Returning error", "error", nRErr)
       return fmt.Errorf("Failure to create new admin and default roles for new company: %w", nRErr)

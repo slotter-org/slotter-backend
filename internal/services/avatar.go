@@ -31,10 +31,14 @@ type AvatarService interface {
   CreateAndUploadWmsAvatar(ctx context.Context, tx *gorm.DB, wms *types.Wms) error
   CreateAndUploadCompanyAvatar(ctx context.Context, tx *gorm.DB, company *types.Company) error
   CreateAndUploadUserAvatar(ctx context.Context, tx *gorm.DB, user *types.User) error
+  CreateAndUploadWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) error
+  CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) error
 
   GenerateUserAvatar(ctx context.Context, tx *gorm.DB, user *types.User) (bytes.Buffer, error)
   GenerateCompanyAvatar(ctx context.Context, tx *gorm.DB, company *types.Company) (bytes.Buffer, error)
   GenerateWmsAvatar(ctx context.Context, tx *gorm.DB, wms *types.Wms) (bytes.Buffer, error)
+  GernerateWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) (bytes.Buffer, error)
+  GenerateRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) (bytes.Buffer, error)
 }
 
 type avatarService struct {
@@ -42,17 +46,20 @@ type avatarService struct {
   log             *logger.Logger
   wmsRepo	  repos.WmsRepo
   companyRepo	  repos.CompanyRepo
+  warehouseRepo	  repos.WarehouseRepo
   userRepo	  repos.UserRepo
   roleRepo	  repos.RoleRepo
   permissionRepo  repos.PermissionRepo
   bucketService	  BucketService
   companyIcons    []string
   wmsIcons        []string
+  warehouseIcons  []string
+  roleIcons	  []string
   bgColors        []color.NRGBA
   fontFace        font.Face
 }
 
-func NewAvatarService(db *gorm.DB, log *logger.Logger, wmsRepo repos.WmsRepo, companyRepo repos.CompanyRepo, userRepo repos.UserRepo, roleRepo repos.RoleRepo, permissionRepo repos.PermissionRepo, bucketService BucketService) (AvatarService, error) {
+func NewAvatarService(db *gorm.DB, log *logger.Logger, wmsRepo repos.WmsRepo, companyRepo repos.CompanyRepo, warehouseRepo repos.WarehouseRepo, userRepo repos.UserRepo, roleRepo repos.RoleRepo, permissionRepo repos.PermissionRepo, bucketService BucketService) (AvatarService, error) {
   serviceLog := log.With("service", "AvatarService")
 
 
@@ -84,6 +91,30 @@ func NewAvatarService(db *gorm.DB, log *logger.Logger, wmsRepo repos.WmsRepo, co
     return nil, fmt.Errorf("No wms icons found: %s", wmsDir)
   }
 
+  warehouseDir := os.Getenv("WAREHOUSE_ASSET_DIR_PATH")
+  if warehouseDir == "" {
+    warehouseDir = "./assets/warehouse"
+  }
+  warehouseFiles, err := findFiles(warehouseDir)
+  if err != nil {
+    return nil, fmt.Errorf("Failed scanning warehouse icons: %w", err)
+  }
+  if len(warehouseFiles) == 0 {
+    return nil, fmt.Errorf("No warehouse icons found: %s", warehouseDir)
+  }
+
+  roleDir := os.Getenv("ROLE_ASSET_DIR_PATH")
+  if roleDir == "" {
+    roleDir = "./assets/role"
+  }
+  roleFiles, err := findFiles(roleDir)
+  if err != nil {
+    return nil, fmt.Errorf("Failed scanning role icons: %w", err)
+  }
+  if len(roleFiles) == 0 {
+    return nil, fmt.Errorf("No role icons found: %s", roleDir)
+  }
+
   //2) Get Avatar Colors
   colorsJSONPath := os.Getenv("AVATAR_COLORS_JSON_PATH")
   if colorsJSONPath == "" {
@@ -107,16 +138,19 @@ func NewAvatarService(db *gorm.DB, log *logger.Logger, wmsRepo repos.WmsRepo, co
   }
 
   service := &avatarService{
-    db:							db,
+    db:		    db,
     log:            serviceLog,
-    wmsRepo:				wmsRepo,
+    wmsRepo:	    wmsRepo,
     companyRepo:    companyRepo,
-    userRepo:				userRepo,
-    roleRepo:				roleRepo,
+    warehouseRepo:  warehouseRepo,
+    userRepo:	    userRepo,
+    roleRepo:	    roleRepo,
     permissionRepo: permissionRepo,
     bucketService:  bucketService,
     companyIcons:   companyFiles,
     wmsIcons:       wmsFiles,
+    warehouseIcons: warehouseFiles,
+    roleIcons:	    roleFiles,
     bgColors:       bgColors,
     fontFace:       face,
   }
@@ -179,6 +213,45 @@ func (as *avatarService) CreateAndUploadUserAvatar(ctx context.Context, tx *gorm
   }
   return nil
 }
+
+func (as *avatarService) CreateAndUploadWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) error {
+  buf, err := as.GenerateWarehouseAvatar(ctx, tx, warehouse)
+  if err != nil {
+    return err
+  }
+  bucketKey := fmt.Sprintf("warehouse_avatars/%s.png", warehouse.ID.String())
+  if err := as.bucketService.UploadFile(ctx, tx, bucketKey, bytes.NewReader(buf.Bytes())); err != nil {
+    return fmt.Errorf("Failed to upload warehouse avatar: %w", err)
+  }
+  if warehouse.AvatarBucketKey != bucketKey {
+    warehouse.AvatarBucketKey = bucketKey
+  }
+  finalURL := as.bucketService.GetPublicURL(bucketKey)
+  if warehouse.AvatarURL != finalURL {
+    warehouse.AvatarURL = finalURL
+  }
+  return nil
+}
+
+func (as *avatarService) CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) error {
+  buf, err := as.GenerateRoleAvatar(ctx, tx, role)
+  if err != nil {
+    return err
+  }
+  bucketKey := fmt.Sprintf("role_avatar/%s.png", role.ID.String())
+  if err := as.bucketService.UploadFile(ctx, tx, bucketKey, bytes.NewReader(buf.Bytes())); err != nil {
+    return fmt.Errorf("failed to upload role avatar: %w", err)
+  }
+  if role.AvatarBucketKey != bucketKey {
+    role.AvatarBucketKey = bucketKey
+  }
+  finalURL := as.bucketService.GetPublicURL(bucketKey)
+  if role.AvatarURL != finalURL {
+    role.AvatarURL = finalURL
+  }
+  return nil
+}
+
 
 func (as *avatarService) GenerateUserAvatar(ctx context.Context, tx *gorm.DB, user *types.User) (bytes.Buffer, error) {
 	const size = 512
@@ -286,6 +359,53 @@ func (as *avatarService) GenerateWmsAvatar(ctx context.Context, tx *gorm.DB, wms
 		return buf, fmt.Errorf("failed to encode PNG: %w", err)
 	}
 	return buf, nil
+}
+
+func (as *avatarService) GenerateWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) (bytes.Buffer, error) {
+  const size = 512
+  dc := gg.NewContext(size, size)
+
+  dc.DrawCircle(float64(size)/2, float64(size)/2, float64(size)/2)
+  dc.Clip()
+
+  base := as.bgColors[rand.Intn(len(as.bgColors))]
+  dc.SetColor(base)
+  dc.DrawRectangle(0, 0, float64(size), float64(size))
+  dc.Fill()
+
+  iconPath := as.warehouseIcons[rand.Intn(len(as.warehouseIcons))]
+  iconImg, err := imaging.Open(iconPath)
+  if err != nil {
+    return bytes.Buffer{}, fmt.Errorf("failed to open warehouse icon: %w", err)
+  }
+  whiteIcon := colorizeImageWhite(iconImg)
+  maxIconSize := float64(size) * 0.5
+  whiteIcon = imaging.Fit(whiteIcon, int(maxIconSize), int(maxIconSize), imaging.Lanczos)
+
+  dc.DrawImageAnchored(whiteIcon, size/2, size/2, 0.5, 0.5)
+
+  var buf bytes.Buffer
+  if err := dc.EncodePNG(&buf); err != nil {
+    return buf, fmt.Errorf("failed to encode PNG: %w", err)
+  }
+  return buf, nil
+}
+
+func (as *avatarService) GenerateRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) (bytes.Buffer, error) {
+  iconPath := as.roleIcons[rand.Intn(len(as.roleIcons))]
+
+  img, err := imaging.Open(iconPath)
+  if err != nil {
+    return bytes.Buffer{}, fmt.Errorf("failed to open role icon %q: %w", iconPath, err)
+  }
+
+  img = imaging.Fit(img, 256, 256, imaging.Lanczos)
+
+  var buf bytes.Buffer
+  if err := imaging.Encode(&buf, img, imaging.PNG); err != nil {
+    return buf, fmt.Errorf("failed to encode role avatar PNG: %w", err)
+  }
+  return buf, nil
 }
 
 

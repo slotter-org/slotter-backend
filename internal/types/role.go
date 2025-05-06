@@ -19,6 +19,8 @@ type Role struct {
 
 
   Name                string                    `gorm:"column:name" json:"name"`
+  AvatarBucketKey     string                    `gorm:"column:avatar_bucket_key" json:"avatarBucketKey"`
+  AvatarURL           string                    `gorm:"column:avatar_url" json:"avatarURL"`
 
   CreatedAt           time.Time                 `gorm:"not null;default:now()" json:"createdAt"`
   UpdatedAt           time.Time                 `gorm:"not null;default:now()" json:"updatedAt"`
