@@ -51,7 +51,7 @@ func NewMyWmsService(
     wmsRepo:        wmsRepo,
     userRepo:       userRepo,
     roleRepo:       roleRepo,
-    invitationRepo  invitationRepo,
+    invitationRepo:  invitationRepo,
   }
 }
 
