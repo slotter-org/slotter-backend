@@ -236,11 +236,11 @@ func (as *avatarService) CreateAndUploadWarehouseAvatar(ctx context.Context, tx 
 func (as *avatarService) CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) (*types.Role, error) {
   buf, err := as.GenerateRoleAvatar(ctx, tx, role)
   if err != nil {
-    return err
+    return nil, err
   }
   bucketKey := fmt.Sprintf("role_avatar/%s.png", role.ID.String())
   if err := as.bucketService.UploadFile(ctx, tx, bucketKey, bytes.NewReader(buf.Bytes())); err != nil {
-    return fmt.Errorf("failed to upload role avatar: %w", err)
+    return nil, fmt.Errorf("failed to upload role avatar: %w", err)
   }
   if role.AvatarBucketKey != bucketKey {
     role.AvatarBucketKey = bucketKey

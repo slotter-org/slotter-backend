@@ -35,7 +35,7 @@ func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.R
     return nil, fmt.Errorf("transaction cannot be nil")
   }
 
-  createdRoles, err := roleRepo.Create(ctx, tx, roles)
+  createdRoles, err := rs.roleRepo.Create(ctx, tx, roles)
   if err != nil {
     rs.log.Error("failed to create roles", "error", err)
     return nil, fmt.Errorf("failed to create roles: %w", err)
@@ -52,7 +52,7 @@ func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.R
     toUpdateRoles = append(toUpdateRoles, updatedRole)
   }
   
-  updatedRoles, err := roleRepo.Update(ctx, tx, toUpdateRoles)
+  updatedRoles, err := rs.roleRepo.Update(ctx, tx, toUpdateRoles)
   if err != nil {
     rs.log.Error("Failed to update roles with avatar details", "error", err)
     return nil, fmt.Errorf("failed to update roles with avatar details: %w", err)
