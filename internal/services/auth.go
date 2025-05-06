@@ -83,7 +83,7 @@ func NewAuthService(
     wmsRepo:        wmsRepo,
     companyRepo:    companyRepo,
     roleRepo:       roleRepo,
-    roleService:    RoleService,
+    roleService:    roleService,
     permissionRepo: permissionRepo,
     avatarService:  avatarService,
     userTokenRepo:  userTokenRepo,

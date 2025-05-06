@@ -37,7 +37,7 @@ type AvatarService interface {
   GenerateUserAvatar(ctx context.Context, tx *gorm.DB, user *types.User) (bytes.Buffer, error)
   GenerateCompanyAvatar(ctx context.Context, tx *gorm.DB, company *types.Company) (bytes.Buffer, error)
   GenerateWmsAvatar(ctx context.Context, tx *gorm.DB, wms *types.Wms) (bytes.Buffer, error)
-  GernerateWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) (bytes.Buffer, error)
+  GenerateWarehouseAvatar(ctx context.Context, tx *gorm.DB, warehouse *types.Warehouse) (bytes.Buffer, error)
   GenerateRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) (bytes.Buffer, error)
 }
 
@@ -233,7 +233,7 @@ func (as *avatarService) CreateAndUploadWarehouseAvatar(ctx context.Context, tx 
   return nil
 }
 
-func (as *avatarService) CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) error {
+func (as *avatarService) CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm.DB, role *types.Role) (*types.Role, error) {
   buf, err := as.GenerateRoleAvatar(ctx, tx, role)
   if err != nil {
     return err
@@ -249,7 +249,7 @@ func (as *avatarService) CreateAndUploadRoleAvatar(ctx context.Context, tx *gorm
   if role.AvatarURL != finalURL {
     role.AvatarURL = finalURL
   }
-  return nil
+  return role, nil
 }
 
 

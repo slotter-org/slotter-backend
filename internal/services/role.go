@@ -42,7 +42,7 @@ func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.R
     return nil, fmt.Errorf("failed to create roles: %w", err)
   }
 
-  var result []*types.Role
+  var toUpdateRoles []*types.Role
   for i, role := range createdRoles {
     rs.log.Info(fmt.Sprintf("Uploading avatar for role #%d (ID=%s)", i, role.ID))
     updatedRole, err := rs.avatarService.CreateAndUploadRoleAvatar(ctx, tx, role)
@@ -50,8 +50,15 @@ func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.R
       rs.log.Error("avatar upload failed", "roleID", "error", err)
       return nil, fmt.Errorf("failed to create/upload avatar for role %s: %w", role.ID, err)
     }
-    result = append(result, updatedRole)
+    toUpdateRoles = append(toUpdateRoles, updatedRole)
   }
+  
+  updatedRoles, err := roleRepo.Update(ctx, tx, toUpdateRoles)
+  if err != nil {
+    rs.log.Error("Failed to update roles with avatar details", "error", err)
+    return nil, fmt.Errorf("failed to update roles with avatar details: %w", err)
+  }
+
   rs.log.Info("All role avatars created and upload successfully")
-  return result, nil
+  return updatedRoles, nil
 }
