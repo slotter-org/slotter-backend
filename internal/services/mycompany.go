@@ -20,24 +20,28 @@ type MyCompanyService interface {
     GetMyUsersWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.User, error)
     GetMyRoles(ctx context.Context, tx *gorm.DB) ([]types.Role, error)
     GetMyRolesWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Role, error)
+    GetMyInvitations(ctx context.Context, tx *gorm.DB) ([]types.Invitation, error)
+    GetMyInvitationsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Invitation, error)
 }
 
 type myCompanyService struct {
-    db            *gorm.DB
-    log           *logger.Logger
-    warehouseRepo repos.WarehouseRepo
-    companyRepo   repos.CompanyRepo
-    userRepo      repos.UserRepo
-    roleRepo      repos.RoleRepo
+    db              *gorm.DB
+    log             *logger.Logger
+    warehouseRepo   repos.WarehouseRepo
+    companyRepo     repos.CompanyRepo
+    userRepo        repos.UserRepo
+    roleRepo        repos.RoleRepo
+    invitationRepo  repos.InvitationRepo
 }
 
 func NewMyCompanyService(
-    db            *gorm.DB,
-    log           *logger.Logger,
-    warehouseRepo repos.WarehouseRepo,
-    companyRepo   repos.CompanyRepo,
-    userRepo      repos.UserRepo,
-    roleRepo      repos.RoleRepo,
+    db              *gorm.DB,
+    log             *logger.Logger,
+    warehouseRepo   repos.WarehouseRepo,
+    companyRepo     repos.CompanyRepo,
+    userRepo        repos.UserRepo,
+    roleRepo        repos.RoleRepo,
+    invitationRepo  repos.InvitationRepo,
 ) MyCompanyService {
     serviceLog := log.With("service", "MyCompanyService")
     return &myCompanyService{
@@ -47,6 +51,7 @@ func NewMyCompanyService(
         companyRepo:    companyRepo,
         userRepo:       userRepo,
         roleRepo:       roleRepo,
+        invitationRepo: invitationRepo,
     }
 }
 
@@ -199,6 +204,54 @@ func (cs *myCompanyService) GetMyRolesWithTransaction(ctx context.Context, tx *g
     }
     cs.log.Info("Fetched roles for the users Company", "count", len(roles))
     return roles, nil
+}
+
+func (cs *myCompanyService) GetMyInvitations(ctx context.Context, tx *gorm.DB) ([]types.Invitation, error) {
+    if tx != nil {
+        return nil, fmt.Errorf("please use GetMyInvitationsWithTransaction if you already have a transaction")
+    }
+    var results []types.Invitation
+    err := cs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+        invs, iErr := cs.GetMyInvitationsWithTransaction(ctx, innerTx)
+        if iErr != nil {
+            return iErr
+        }
+        for _, i := range invs {
+            results = append(results, *i)
+        }
+        return nil
+    })
+    if err != nil {
+        return nil, err
+    }
+    return results, nil
+}
+
+func (cs *myCompanyService) GetMyInvitationsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Invitation, error) {
+    if tx == nil {
+        cs.log.Warn("GetMyInvitationsWithTransaction was called with nil transaction")
+        return nil, fmt.Errorf("transaction is required and cannot be nil")
+    }
+    rd := requestdata.GetRequestData(ctx)
+    if rd == nil {
+        cs.log.Warn("RequestData not set in context")
+        return nil, fmt.Errorf("request data not set in context")
+    }
+    if rd.CompanyID == uuid.Nil {
+        cs.log.Warn("No CompanyID in RequestData. The user might be a Wms user or missing data.")
+        return nil, fmt.Errorf("user does not have a valid companyID in request data")
+    }
+    invsArr, err := cs.invitationRepo.GetbyCompanyIDs(ctx, tx,  rd.CompanyID)
+    if err != nil {
+        cs.log.Warn("Failed to fetch invitations by company IDs", "error", err)
+        return nil, err
+    }
+    if len(invsArr) == 0 {
+        cs.log.Debug("No invitations found for the user's company", "companyID", rd.CompanyID)
+        return []*types.Invitation{}, nil
+    }
+    cs.log.Info("Fetched invitations for the user's company", "count", len(invsArr[0]))
+    return invsArr[0], nil
 }
 
 

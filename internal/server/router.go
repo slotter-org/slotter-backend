@@ -79,9 +79,11 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   protected.GET("/mycompany/warehouses", cfg.MyCompanyHandler.GetMyWarehouses)
   protected.GET("/mycompany/users", cfg.MyCompanyHandler.GetMyUsers)
   protected.GET("/mycompany/roles", cfg.MyCompanyHandler.GetMyRoles)
+  protected.GET("/mycompany/invitations", cfg.MyCompanyHandler.GetMyInvitations)
   protected.GET("/mywms/companies", cfg.MyWmsHandler.GetMyCompanies)
   protected.GET("/mywms/users", cfg.MyWmsHandler.GetMyUsers)
   protected.GET("/mywms/roles", cfg.MyWmsHandler.GetMyRoles)
+  protected.GET("/mywms/invitations", cfg.MyWmsHandler.GetMyInvitations)
 
   //Warehouse
   protected.POST("/warehouse", cfg.WarehouseHandler.CreateWarehouse)

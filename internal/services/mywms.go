@@ -20,6 +20,8 @@ type MyWmsService interface {
   GetMyUsersWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.User, error)
   GetMyRoles(ctx context.Context, tx *gorm.DB) ([]types.Role, error)
   GetMyRolesWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Role, error)
+  GetMyInvitations(ctx context.Context, tx *gorm.DB) ([]types.Invitation, error)
+  GetMyInvitationsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Invitation, error)
 }
 
 type myWmsService struct {
@@ -29,24 +31,27 @@ type myWmsService struct {
   wmsRepo         repos.WmsRepo
   userRepo        repos.UserRepo
   roleRepo        repos.RoleRepo
+  invitationRepo  repos.InvitationRepo
 }
 
 func NewMyWmsService(
-  db            *gorm.DB,
-  log           *logger.Logger,
-  companyRepo   repos.CompanyRepo,
-  wmsRepo       repos.WmsRepo,
-  userRepo      repos.UserRepo,
-  roleRepo      repos.RoleRepo,
+  db              *gorm.DB,
+  log             *logger.Logger,
+  companyRepo     repos.CompanyRepo,
+  wmsRepo         repos.WmsRepo,
+  userRepo        repos.UserRepo,
+  roleRepo        repos.RoleRepo,
+  invitationRepo  repos.InvitationRepo,
 ) MyWmsService {
   serviceLog := log.With("service", "MyWmsService")
   return &myWmsService{
-    db:           db,
-    log:          serviceLog,
-    companyRepo:  companyRepo,
-    wmsRepo:      wmsRepo,
-    userRepo:     userRepo,
-    roleRepo:     roleRepo,
+    db:             db,
+    log:            serviceLog,
+    companyRepo:    companyRepo,
+    wmsRepo:        wmsRepo,
+    userRepo:       userRepo,
+    roleRepo:       roleRepo,
+    invitationRepo  invitationRepo,
   }
 }
 
@@ -189,4 +194,52 @@ func (ws *myWmsService) GetMyRolesWithTransaction(ctx context.Context, tx *gorm.
   }
   ws.log.Info("Fetched roles for the user's Wms", "count", len(roles))
   return roles, nil
+}
+
+func (ws *myWmsService) GetMyInvitations(ctx context.Context, tx *gorm.DB) ([]types.Invitation, error) {
+  if tx != nil {
+    return nil, fmt.Errorf("please use GetMyInvitationsWithTransaction if you already have a transaction")
+  }
+  var results []types.Invitation
+  err := ws.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+    invs, iErr := ws.GetMyInvitationsWithTransaction(ctx, innerTx)
+    if iErr != nil {
+      return iErr
+    }
+    for _, i := range invs {
+      results = append(results, *i)
+    }
+    return nil
+  })
+  if err != nil {
+    return nil, err
+  }
+  return results, nil
+}
+
+func (ws *myWmsService) GetMyInvitationsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Invitation, error) {
+  if tx == nil {
+    ws.log.Warn("GetMyInvitationsWithTransaction called with nil transaction")
+    return nil, fmt.Errorf("transaction is required and cannot be nil")
+  }
+  rd := requestdata.GetRequestData(ctx)
+  if rd == nil {
+    ws.log.Warn("RequestData not set in context.")
+    return nil, fmt.Errorf("request data not set in context")
+  }
+  if rd.WmsID == uuid.Nil {
+    ws.log.Warn("No WmsID in Request Data. The user might be a Company user or missing data.")
+    return nil, fmt.Errorf("user does not have a valid WmsID in request data")
+  }
+  invsArr, err := ws.invitationRepo.GetByWmsIDs(ctx, tx, []uuid.UUID{rd.WmsID})
+  if err != nil {
+    ws.log.Warn("Failed to fetch invitations by WmsID", "error", err)
+    return nil, err
+  }
+  if len(invsArr) == 0 {
+    ws.log.Debug("No invitations found for the user's wms", "wmsID", rd.WmsID)
+    return []*types.Invitation{}, nil
+  }
+  ws.log.Info("Fetched invitations for the user's wms", "count", len(invsArr[0]))
+  return invsArr[0], nil
 }

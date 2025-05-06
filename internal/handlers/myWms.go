@@ -42,5 +42,12 @@ func (mwh *MyWmsHandler) GetMyRoles(c *gin.Context) {
   c.JSON(http.StatusOK, gin.H{"myRoles": myRoles})
 }
 
-
+func (mwh *MyWmsHandler) GetMyInvitations(c *gin.Context) {
+  myInvs, err := mwh.myWmsService.GetMyInvitations(c.Request.Context(), nil)
+  if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
+  c.JSON(http.StatusOK, gin.H{"myInvitations": myInvs})
+}
 
