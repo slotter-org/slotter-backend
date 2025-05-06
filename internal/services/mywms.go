@@ -238,8 +238,7 @@ func (ws *myWmsService) GetMyInvitationsWithTransaction(ctx context.Context, tx 
   }
   if len(invsArr) == 0 {
     ws.log.Debug("No invitations found for the user's wms", "wmsID", rd.WmsID)
-    return []*types.Invitation{}, nil
   }
-  ws.log.Info("Fetched invitations for the user's wms", "count", len(invsArr[0]))
-  return invsArr[0], nil
+  ws.log.Info("Fetched invitations for the user's wms", "count", len(invsArr))
+  return invsArr, nil
 }

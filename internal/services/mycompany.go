@@ -248,10 +248,9 @@ func (cs *myCompanyService) GetMyInvitationsWithTransaction(ctx context.Context,
     }
     if len(invsArr) == 0 {
         cs.log.Debug("No invitations found for the user's company", "companyID", rd.CompanyID)
-        return []*types.Invitation{}, nil
     }
-    cs.log.Info("Fetched invitations for the user's company", "count", len(invsArr[0]))
-    return invsArr[0], nil
+    cs.log.Info("Fetched invitations for the user's company", "count", len(invsArr))
+    return invsArr, nil
 }
 
 
