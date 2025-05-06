@@ -241,7 +241,7 @@ func (cs *myCompanyService) GetMyInvitationsWithTransaction(ctx context.Context,
         cs.log.Warn("No CompanyID in RequestData. The user might be a Wms user or missing data.")
         return nil, fmt.Errorf("user does not have a valid companyID in request data")
     }
-    invsArr, err := cs.invitationRepo.GetByCompanyIDs(ctx, tx,  rd.CompanyID)
+    invsArr, err := cs.invitationRepo.GetByCompanyIDs(ctx, tx,  []uuid.UUID{rd.CompanyID})
     if err != nil {
         cs.log.Warn("Failed to fetch invitations by company IDs", "error", err)
         return nil, err
