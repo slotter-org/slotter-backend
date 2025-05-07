@@ -40,6 +40,8 @@ type Invitation struct {
   Email               *string                   `gorm:"column:email"`
   PhoneNumber         *string                   `gorm:"column:phone_number"`
   ExpiresAt           time.Time                 `gorm:"column:expires_at"`
+  AvatarBucketKey     string                    `gorm:"column:avatar_bucket_key" json:"avatarBucketKey"`
+  AvatarURL           string                    `gorm:"column:avatar_url" json:"avatarURL"`
 
   AcceptedAt          time.Time                 
   CanceledAt          time.Time
