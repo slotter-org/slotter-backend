@@ -186,7 +186,7 @@ func (rs *roleService) createLoggedInWithTransaction(ctx context.Context, tx *go
   var exists bool
   var err error
   if entityType == "company" {
-    exists, err := rs.roleRepo.NameExistsByCompanyID(ctx, tx, entityID, name)
+    exists, err = rs.roleRepo.NameExistsByCompanyID(ctx, tx, entityID, name)
   } else {
     exists, err = rs.roleRepo.NameExistsByWmsID(ctx, tx, entityID, name)
   }
