@@ -8,6 +8,7 @@ import (
   "github.com/slotter-org/slotter-backend/internal/services"
   "github.com/slotter-org/slotter-backend/internal/ssedata"
   "github.com/slotter-org/slotter-backend/internal/sse"
+  "github.com/slotter-org/slotter-backend/internal/errordata"
 )
 
 type RoleHandler struct {
@@ -31,7 +32,7 @@ func (rh *RoleHandler) CreateRole(c *gin.Context) {
     c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
     return
   }
-  newRole, nrErr := rh.roleService.CreatedLoggedInWithEntity(ctx, nil, req.Name, req.Description)
+  _, nrErr := rh.roleService.CreateLoggedInWithEntity(ctx, nil, req.Name, req.Description)
   if nrErr != nil {
     c.JSON(http.StatusInternalServerError, gin.H{"error": nrErr.Error()})
     return
