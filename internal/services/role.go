@@ -207,7 +207,7 @@ func (rs *roleService) createLoggedInWithTransaction(ctx context.Context, tx *go
   } else {
     newRole.WmsID = &entityID
   }
-  newRoles, nrErr := rd.Create(ctx, tx, []*types.Role{newRole})
+  newRoles, nrErr := rs.Create(ctx, tx, []*types.Role{newRole})
   if nrErr != nil {
     rs.log.Warn("Failure to create new role", "error", nrErr)
     return nil, fmt.Errorf("failed to create new role: %w", nrErr)
