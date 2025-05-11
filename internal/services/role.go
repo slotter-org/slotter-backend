@@ -99,10 +99,10 @@ func (rs *roleService) CreateLoggedInWithEntity(ctx context.Context, tx *gorm.DB
   if channel != "" {
     sseData := ssedata.GetSSEData(ctx)
     if sseData != nil {
-      sseData.AppendMessage(sse.SSEMessage){
+      sseData.AppendMessage(sse.SSEMessage{
         Channel: channel,
         Event: sse.SSEEventRoleCreated,
-      }
+      })
     }
   }
   return role, nil
