@@ -5,7 +5,6 @@ import (
 
   "github.com/gin-gonic/gin"
 
-  "github.com/slotter-org/slotter-backend/internal/types"
   "github.com/slotter-org/slotter-backend/internal/services"
   "github.com/slotter-org/slotter-backend/internal/ssedata"
   "github.com/slotter-org/slotter-backend/internal/sse"
