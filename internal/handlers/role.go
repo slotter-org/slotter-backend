@@ -16,7 +16,7 @@ type RoleHandler struct {
 }
 
 func NewRoleHandler(roleService services.RoleService, hub *sse.SSEHub) *RoleHandler {
-  return &RoleHander{roleService: roleService, sseHub: hub}
+  return &RoleHandler{roleService: roleService, sseHub: hub}
 }
 
 type RoleCreateRequest struct {
