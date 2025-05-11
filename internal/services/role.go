@@ -9,6 +9,7 @@ import (
   "github.com/google/uuid"
   
   "github.com/slotter-org/slotter-backend/internal/logger"
+  "github.com/slotter-org/slotter-backend/internal/normalization"
   "github.com/slotter-org/slotter-backend/internal/types"
   "github.com/slotter-org/slotter-backend/internal/repos"
   "github.com/slotter-org/slotter-backend/internal/ssedata"
@@ -85,7 +86,7 @@ func (rs *roleService) CreateLoggedInWithEntity(ctx context.Context, tx *gorm.DB
   }
   role, err := rs.createLoggedIn(ctx, tx, entityType, name, description)
   if err != nil {
-    return nil, err
+    return types.Role{}, err
   }
   var channel string
   switch rd.UserType {
