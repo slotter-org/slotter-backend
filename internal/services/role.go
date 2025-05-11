@@ -5,6 +5,8 @@ import (
   "fmt"
 
   "gorm.io/gorm"
+
+  "github.com/google/uuid"
   
   "github.com/slotter-org/slotter-backend/internal/logger"
   "github.com/slotter-org/slotter-backend/internal/types"
