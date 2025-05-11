@@ -51,3 +51,12 @@ func (mch *MyCompanyHandler) GetMyInvitations(c *gin.Context) {
   c.JSON(http.StatusOK, gin.H{"myInvitations": myInvs})
 }
 
+func (mch *MyCompanyHandler) GetMyPermissions(c *gin.Context) {
+  myPerms, err := mch.myCompanyService.GetAllPermissions(c.Request.Context(), nil)
+  if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
+  c.JSON(http.StatusOK, gin.H{"myPermissions": myPerms})
+}
+

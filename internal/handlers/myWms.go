@@ -51,3 +51,11 @@ func (mwh *MyWmsHandler) GetMyInvitations(c *gin.Context) {
   c.JSON(http.StatusOK, gin.H{"myInvitations": myInvs})
 }
 
+func (mwh *MyWmsHandler) GetMyPermissions(c *gin.Context) {
+  myPerms, err := mwh.myWmsService.GetAllPermissions(c.Request.Context(), nil)
+  if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
+  c.JSON(http.StatusOK, gin.H{"myPermissions": myPerms})
+}

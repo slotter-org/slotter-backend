@@ -23,6 +23,9 @@ const (
 	SSEEventWarehouseDeleted   SSEEvent = "WarehouseDeleted"
 	SSEEventCompanyCreated     SSEEvent = "CompanyCreated"
 	SSEEventCompanyDeleted     SSEEvent = "CompanyDeleted"
+	SSEEventRoleCreated				 SSEEvent = "RoleCreated"
+	SSEEventRoleDeleted				 SSEEvent = "RoleDeleted"
+	SSEEventRoleUpdated				 SSEEvent = "RoleUpdated"
 )
 
 type SSEMessage struct {

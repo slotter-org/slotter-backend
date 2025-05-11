@@ -15,6 +15,8 @@ type Permission struct {
 
 
   Name                string                    `gorm:"column:name"`
+  Category            string                    `gorm:"column:category"`
+  Action              string                    `gorm:"column:action"`
 
   CreatedAt           time.Time                 `gorm:"not null;default:now()"`
   UpdatedAt           time.Time                 `gorm:"not null;default:now()"`

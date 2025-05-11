@@ -17,6 +17,9 @@ type RoleRepo interface {
     GetByIDs(ctx context.Context, tx *gorm.DB, roleIDs []uuid.UUID) ([]*types.Role, error)
     GetByWmsIDs(ctx context.Context, tx *gorm.DB, wmsIDs []uuid.UUID) ([]*types.Role, error)
     GetByCompanyIDs(ctx context.Context, tx *gorm.DB, companyIDs []uuid.UUID) ([]*types.Role, error)
+
+    NameExistsByCompanyID(ctx context.Context, tx *gorm.DB, companyID uuid.UUID, roleName string) (bool, error)
+    NameExistsByWmsID(ctx context.Context, tx *gorm.DB, wmsID uuid.UUID, roleName string) (bool, error)
     // UPDATE
     Update(ctx context.Context, tx *gorm.DB, roles []*types.Role) ([]*types.Role, error)
     // SOFT DELETE
@@ -476,3 +479,40 @@ func (rr *roleRepo) UnassociatePermissions(ctx context.Context, tx *gorm.DB, rol
     return nil
 }
 
+func (rr *roleRepo) NameExistsByCompanyID(ctx context.Context, tx *gorm.DB, companyID uuid.UUID, roleName string) (bool, error) {
+    rr.log.Info("Starting NameExistsByCompany...")
+    transaction := tx
+    if transaction == nil {
+        transaction = rr.db
+    }
+    var count int64
+    err := transaction.WithContext(ctx).
+        Model(&types.Role{}).
+        Where("company_id = ? AND LOWER(name) = LOWER(?)", companyID, roleName).
+        Count(&count).Error
+    if err != nil {
+        rr.log.Error("Failed to check if role name exists by company", "error", err)
+        return false, err
+    }
+    rr.log.Debug("NameExistsByCompany results", "roleName", roleName, "companyID", companyID, "count", count)
+    return count > 0, nil
+}
+
+func (rr *roleRepo) NameExistsByWmsID(ctx context.Context, tx *gorm.DB, wmsID uuid.UUID, roleName string) (bool, error) {
+    rr.log.Info("Starting NameExistsByWms...")
+    transaction := tx
+    if transaction == nil {
+        transaction = rr.db
+    }
+    var count int64
+    err := transaction.WithContext(ctx).
+        Model(&types.Role{}).
+        Where("wms_id = ? AND LOWER(name) = LOWER(?)", wmsID, roleName).
+        Count(&count).Error
+    if err != nil {
+        rr.log.Error("Failed to check if role name exists by wms", "error", err)
+        return false, err
+    }
+    rr.log.Debug("NameExistsByWms results", "roleName", roleName, "wmsID", wmsID, "count", count)
+    return count > 0, nil
+}

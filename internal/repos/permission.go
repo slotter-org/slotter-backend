@@ -10,8 +10,6 @@ import (
     "github.com/slotter-org/slotter-backend/internal/types"
 )
 
-// PermissionRepo defines the interface for interacting with the Permission model.
-// Patterned after the other repos (e.g., user.go, role.go, etc.).
 type PermissionRepo interface {
     // CREATE
     Create(ctx context.Context, tx *gorm.DB, permissions []*types.Permission) ([]*types.Permission, error)

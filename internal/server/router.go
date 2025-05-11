@@ -18,6 +18,7 @@ type RouterConfig struct {
   WsHandler             gin.HandlerFunc
   WarehouseHandler      *handlers.WarehouseHandler
   SSEHandler            *handlers.SSEHandler
+  RoleHandler           *handlers.RoleHandler
 }
 
 func NewRouter(cfg RouterConfig) *gin.Engine {
@@ -75,15 +76,20 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   protected.GET("/mycompany", cfg.MeHandler.GetMyCompany)
   protected.GET("/myroles", cfg.MeHandler.GetMyRole)
 
+  //Role
+  protected.POST("/role", cfg.RoleHandler.CreateRole)
+
   //MyCompany/MyWms
   protected.GET("/mycompany/warehouses", cfg.MyCompanyHandler.GetMyWarehouses)
   protected.GET("/mycompany/users", cfg.MyCompanyHandler.GetMyUsers)
   protected.GET("/mycompany/roles", cfg.MyCompanyHandler.GetMyRoles)
   protected.GET("/mycompany/invitations", cfg.MyCompanyHandler.GetMyInvitations)
+  protected.GET("/mycompany/permissions", cfg.MyCompanyHandler.GetMyPermissions)
   protected.GET("/mywms/companies", cfg.MyWmsHandler.GetMyCompanies)
   protected.GET("/mywms/users", cfg.MyWmsHandler.GetMyUsers)
   protected.GET("/mywms/roles", cfg.MyWmsHandler.GetMyRoles)
   protected.GET("/mywms/invitations", cfg.MyWmsHandler.GetMyInvitations)
+  protected.GET("/mywms/permissions", cfg.MyWmsHandler.GetMyPermissions)
 
   //Warehouse
   protected.POST("/warehouse", cfg.WarehouseHandler.CreateWarehouse)

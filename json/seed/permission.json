@@ -1,14 +1,14 @@
 [
   {
-    "name": "ManageRoles",
+    "name": "Manage Roles",
     "permission_type": "manage_roles"
   },
   {
-    "name": "ManageInvitations",
+    "name": "Manage Invitations",
     "permission_type": "manage_invitations"
   },
   {
-    "name": "ManageAvatar",
+    "name": "Manage Avatar",
     "permission_type": "manage_avatar"
   }
 ]

@@ -22,6 +22,8 @@ type MyWmsService interface {
   GetMyRolesWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Role, error)
   GetMyInvitations(ctx context.Context, tx *gorm.DB) ([]types.Invitation, error)
   GetMyInvitationsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Invitation, error)
+  GetAllPermissions(ctx context.Context, tx *gorm.DB) ([]types.Permission, error)
+  GetAllPermissionsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Permission, error)
 }
 
 type myWmsService struct {
@@ -32,6 +34,7 @@ type myWmsService struct {
   userRepo        repos.UserRepo
   roleRepo        repos.RoleRepo
   invitationRepo  repos.InvitationRepo
+  permissionRepo  repos.PermissionRepo
 }
 
 func NewMyWmsService(
@@ -42,6 +45,7 @@ func NewMyWmsService(
   userRepo        repos.UserRepo,
   roleRepo        repos.RoleRepo,
   invitationRepo  repos.InvitationRepo,
+  permissionRepo  repos.PermissionRepo,
 ) MyWmsService {
   serviceLog := log.With("service", "MyWmsService")
   return &myWmsService{
@@ -51,7 +55,8 @@ func NewMyWmsService(
     wmsRepo:        wmsRepo,
     userRepo:       userRepo,
     roleRepo:       roleRepo,
-    invitationRepo:  invitationRepo,
+    invitationRepo: invitationRepo,
+    permissionRepo: permissionRepo, 
   }
 }
 
@@ -241,4 +246,51 @@ func (ws *myWmsService) GetMyInvitationsWithTransaction(ctx context.Context, tx 
   }
   ws.log.Info("Fetched invitations for the user's wms", "count", len(invsArr))
   return invsArr, nil
+}
+
+func (ws *myWmsService) GetAllPermissions(ctx context.Context, tx *gorm.DB) ([]types.Permission, error) {
+    if tx != nil {
+        return nil, fmt.Errorf("please use GetAllPermissionsWithTransaction if you already have a transaction")
+    }
+    var results []types.Permission
+    err := ws.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+        ps, psErr := ws.GetAllPermissionsWithTransaction(ctx, innerTx)
+        if psErr != nil {
+            return psErr
+        }
+        for _, p := range ps {
+            results = append(results, *p)
+        }
+        return nil
+    })
+    if err != nil {
+        return nil, err
+    }
+    return results, nil
+}
+
+func (ws *myWmsService) GetAllPermissionsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Permission, error) {
+    if tx == nil {
+        ws.log.Warn("GetAllPermissionsWithTransaction was called with nil transaction")
+        return nil, fmt.Errorf("transaction is required and cannot be nil")
+    }
+    rd := requestdata.GetRequestData(ctx)
+    if rd == nil {
+        ws.log.Warn("RequestData not set in context.")
+        return nil, fmt.Errorf("request data not set in context")
+    }
+    if rd.WmsID == uuid.Nil {
+        ws.log.Warn("No WmsID in Request Data. The user might be a Company user or missing data.")
+        return nil, fmt.Errorf("user does not have a valid WmsID in request data")
+    }
+    ps, err := ws.permissionRepo.GetAll(ctx, tx)
+    if err != nil {
+        ws.log.Debug("Failed to fetch all permissions for wms", "error", err)
+        return nil, err
+    }
+    if len(ps) == 0 {
+        ws.log.Debug("No Permission found for get all permissions for wms", "wmsID", rd.WmsID)
+    }
+    ws.log.Info("Fetched all permissions for the user's wms", "count", len(ps))
+    return ps, nil
 }

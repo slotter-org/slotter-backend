@@ -10,6 +10,8 @@ import (
 
   "github.com/slotter-org/slotter-backend/internal/logger"
   "github.com/slotter-org/slotter-backend/internal/requestdata"
+  "github.com/slotter-org/slotter-backend/internal/ssedata"
+  "github.com/slotter-org/slotter-backend/internal/errordata"
   "github.com/slotter-org/slotter-backend/internal/repos"
   "github.com/slotter-org/slotter-backend/internal/services"
 )
@@ -38,6 +40,8 @@ func (am *AuthMiddleware) RequireAuth() gin.HandlerFunc {
       c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
       return
     }
+    ctx = ssedata.WithSSEData(ctx)
+    ctx = errordata.WithErrorData(ctx)
     c.Request = c.Request.WithContext(ctx)
     rd := requestdata.GetRequestData(ctx)
     if rd == nil || rd.UserID == uuid.Nil {

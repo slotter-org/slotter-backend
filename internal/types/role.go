@@ -19,6 +19,7 @@ type Role struct {
 
 
   Name                string                    `gorm:"column:name" json:"name"`
+  Description         *string                   `gorm:"column:description" json:"description"`
   AvatarBucketKey     string                    `gorm:"column:avatar_bucket_key" json:"avatarBucketKey"`
   AvatarURL           string                    `gorm:"column:avatar_url" json:"avatarURL"`
 

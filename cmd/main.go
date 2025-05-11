@@ -127,8 +127,8 @@ func main() {
   roleService := services.NewRoleService(thePG, log, roleRepo, avatarService)
   authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, roleService, permissionRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
-  myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo, invitationRepo)
-  myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo, userRepo, roleRepo, invitationRepo)
+  myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo, invitationRepo, permissionRepo)
+  myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo, userRepo, roleRepo, invitationRepo, permissionRepo)
   invitationService := services.NewInvitationService(thePG, log, invitationRepo, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, textService, emailService)
   warehouseService := services.NewWarehouseService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, warehouseRepo)
   log.Info("Services Set Up From Main Successful :)")
@@ -142,6 +142,7 @@ func main() {
   myWmsHandler := handlers.NewMyWmsHandler(myWmsService)
   invitationHandler := handlers.NewInvitationHandler(invitationService)
   warehouseHandler := handlers.NewWarehouseHandler(warehouseService, wsHub)
+  roleHandler := handlers.NewRoleHandler(roleService, sseHub)
   wsHandler := handlers.WsHandler(wsHub, log)
   sseHandler := handlers.NewSSEHandler(log, sseHub)
   log.Info("Handlers Set Up From Main Successful :)")
@@ -163,6 +164,7 @@ func main() {
     WarehouseHandler:       warehouseHandler,
     WsHandler:              wsHandler,
     SSEHandler:             sseHandler,
+    RoleHandler:            roleHandler,
   })
   log.Info("Router Set Up From Main Successful :)")
 

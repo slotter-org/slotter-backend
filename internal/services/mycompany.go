@@ -22,6 +22,8 @@ type MyCompanyService interface {
     GetMyRolesWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Role, error)
     GetMyInvitations(ctx context.Context, tx *gorm.DB) ([]types.Invitation, error)
     GetMyInvitationsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Invitation, error)
+    GetAllPermissions(ctx context.Context, tx *gorm.DB) ([]types.Permission, error)
+    GetAllPermissionsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Permission, error)
 }
 
 type myCompanyService struct {
@@ -32,6 +34,7 @@ type myCompanyService struct {
     userRepo        repos.UserRepo
     roleRepo        repos.RoleRepo
     invitationRepo  repos.InvitationRepo
+    permissionRepo  repos.PermissionRepo
 }
 
 func NewMyCompanyService(
@@ -42,6 +45,7 @@ func NewMyCompanyService(
     userRepo        repos.UserRepo,
     roleRepo        repos.RoleRepo,
     invitationRepo  repos.InvitationRepo,
+    permissionRepo  repos.PermissionRepo,
 ) MyCompanyService {
     serviceLog := log.With("service", "MyCompanyService")
     return &myCompanyService{
@@ -52,6 +56,7 @@ func NewMyCompanyService(
         userRepo:       userRepo,
         roleRepo:       roleRepo,
         invitationRepo: invitationRepo,
+        permissionRepo: permissionRepo,
     }
 }
 
@@ -253,4 +258,49 @@ func (cs *myCompanyService) GetMyInvitationsWithTransaction(ctx context.Context,
     return invsArr, nil
 }
 
+func (cs *myCompanyService) GetAllPermissions(ctx context.Context, tx *gorm.DB) ([]types.Permission, error) {
+    if tx != nil {
+        return nil, fmt.Errorf("please use GetAllPermissionsWithTransaction if you already have a transaction")
+    }
+    var results []types.Permission
+    err := cs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+        ps, psErr := cs.GetAllPermissionsWithTransaction(ctx, innerTx)
+        if psErr != nil {
+            return psErr
+        }
+        for _, p := range ps {
+            results = append(results, *p)
+        }
+        return nil
+    })
+    if err != nil {
+        return nil, err
+    }
+    return results, nil
+}
 
+func (cs *myCompanyService) GetAllPermissionsWithTransaction(ctx context.Context, tx *gorm.DB) ([]*types.Permission, error) {
+    if tx == nil {
+        cs.log.Warn("GetAllPermissionsWithTransaction was called with nil transaction")
+        return nil, fmt.Errorf("transaction is required and cannot be nil")
+    }
+    rd := requestdata.GetRequestData(ctx)
+    if rd == nil {
+        cs.log.Warn("RequestData not set in context.")
+        return nil, fmt.Errorf("request data not set in context")
+    }
+    if rd.CompanyID == uuid.Nil {
+        cs.log.Warn("No CompanyID in Request Data. The user might be a Wms user or missing data.")
+        return nil, fmt.Errorf("user does not have a valid CompanyID in request data")
+    }
+    ps, err := cs.permissionRepo.GetAll(ctx, tx)
+    if err != nil {
+        cs.log.Debug("Failed to fetch all permissions for company", "error", err)
+        return nil, err
+    }
+    if len(ps) == 0 {
+        cs.log.Debug("No Permission found for get all permissions for company", "companyID", rd.CompanyID)
+    }
+    cs.log.Info("Fetched all permissions for the user's company", "count", len(ps))
+    return ps, nil
+}
