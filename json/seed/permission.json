@@ -1,14 +1,44 @@
 [
   {
-    "name": "Manage Roles",
-    "permission_type": "manage_roles"
+    "name": "Create Roles",
+    "permission_type": "create_roles",
+    "category": "roles",
+    "action": "create"
   },
   {
-    "name": "Manage Invitations",
-    "permission_type": "manage_invitations"
+    "name": "Update Roles",
+    "permission_type": "update_roles",
+    "category": "roles",
+    "action": "update"
   },
   {
-    "name": "Manage Avatar",
-    "permission_type": "manage_avatar"
+    "name": "Delete Roles",
+    "permission_type": "delete_roles",
+    "category": "roles",
+    "action": "delete"
+  },
+  {
+    "name": "Create Invitations",
+    "permission_type": "create_invitations",
+    "category": "invitations",
+    "action": "create"
+  },
+  {
+    "name": "Update Invitations",
+    "permission_type": "update_invitations",
+    "category": "invitations",
+    "action": "update"
+  },
+  {
+    "name": "Delete Invitations",
+    "permission_type": "delete_invitations",
+    "category": "invitations",
+    "action": "delete"
+  },
+  {
+    "name": "Update Avatar",
+    "permission_type": "update_avatar",
+    "category": "avatar",
+    "action": "update"
   }
 ]

@@ -3,6 +3,7 @@ package services
 import (
     "context"
     "fmt"
+    "strings"
 
     "gorm.io/gorm"
 
@@ -19,44 +20,41 @@ import (
 
 type RoleService interface {
     Create(ctx context.Context, tx *gorm.DB, roles []*types.Role) ([]*types.Role, error)
-    CreateLoggedInWithEntity(ctx context.Context, tx *gorm.DB, name string, description string) (types.Role, error)
-    UpdateRole(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, name string, description string, permissions []types.Permission) (types.Role, error)
-    UpdatePermissions(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, permissions []types.Permission) (*types.Role, error)
-    UpdatePermissionsWithTransaction(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, permissions []types.Permission) (*types.Role, error)
-    UpdateFields(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, name string, description string) (types.Role, error)
-    UpdateFieldsWithTransaction(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, name string, description string) (*types.Role, error)
-    createLoggedIn(ctx context.Context, tx *gorm.DB, entityType string, name string, description string) (types.Role, error)
-    createLoggedInWithTransaction(ctx context.Context, tx *gorm.DB, entityType string, name string, description string) (*types.Role, error)
+    CreateLoggedIn(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, name string, description string) (*types.Role, error)
+    UpdatePermissions(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, newPermsSet []types.Permission) (*types.Role, error)
+    UpdateRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, newName string, newDescription string) (*types.Role, error)
+    DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID) error
 }
 
 type roleService struct {
-    db            *gorm.DB
-    log           *logger.Logger
-    roleRepo      repos.RoleRepo
-    avatarService AvatarService
+    db              *gorm.DB
+    log             *logger.Logger
+    roleRepo        repos.RoleRepo
+    permissionRepo  repos.PermissionRepo
+    userRepo        repos.UserRepo
+    avatarService   AvatarService
 }
 
-func NewRoleService(db *gorm.DB, baseLog *logger.Logger, roleRepo repos.RoleRepo, avatarService AvatarService) RoleService {
+func NewRoleService(db *gorm.DB, baseLog *logger.Logger, roleRepo repos.RoleRepo, permissionRepo repos.PermissionRepo, userRepo repos.UserRepo, avatarService AvatarService) RoleService {
     serviceLog := baseLog.With("service", "RoleService")
-    return &roleService{db: db, log: serviceLog, roleRepo: roleRepo, avatarService: avatarService}
+    return &roleService{db: db, log: serviceLog, roleRepo: roleRepo, permissionRepo: permissionRepo, userRepo: userRepo, avatarService: avatarService}
 }
 
 // -------------------------------------------------------------------
 // CREATE
 // -------------------------------------------------------------------
+
 func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.Role) ([]*types.Role, error) {
     rs.log.Info("Starting Create Roles now...")
     if tx == nil {
         rs.log.Error("Transaction cannot be nil")
         return nil, fmt.Errorf("transaction cannot be nil")
     }
-
     createdRoles, err := rs.roleRepo.Create(ctx, tx, roles)
     if err != nil {
         rs.log.Error("failed to create roles", "error", err)
         return nil, fmt.Errorf("failed to create roles: %w", err)
     }
-
     var toUpdateRoles []*types.Role
     for i, role := range createdRoles {
         rs.log.Info(fmt.Sprintf("Uploading avatar for role #%d (ID=%s)", i, role.ID))
@@ -67,7 +65,6 @@ func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.R
         }
         toUpdateRoles = append(toUpdateRoles, updatedRole)
     }
-
     updatedRoles, err := rs.roleRepo.Update(ctx, tx, toUpdateRoles)
     if err != nil {
         rs.log.Error("Failed to update roles with avatar details", "error", err)
@@ -78,518 +75,505 @@ func (rs *roleService) Create(ctx context.Context, tx *gorm.DB, roles []*types.R
     return updatedRoles, nil
 }
 
-// -------------------------------------------------------------------
-// CREATE LOGGED-IN WITH ENTITY
-// -------------------------------------------------------------------
-func (rs *roleService) CreateLoggedInWithEntity(ctx context.Context, tx *gorm.DB, name string, description string) (types.Role, error) {
-    rs.log.Info("Starting CreateLoggedInWithEntity now...")
+func (rs *roleService) CreateLoggedIn(ctx context.Context, tx *gorm.DB, name string, description string) (*types.Role, error) {
+    rs.log.Info("Starting CreateLoggedIn now...")
+    
     rd := requestdata.GetRequestData(ctx)
     if rd == nil {
-        rs.log.Warn("Request Data is not set in context")
-        return types.Role{}, fmt.Errorf("request data not set in context")
+        rs.log.Warn("Request data not set in context")
+        return nil, fmt.Errorf("request data not set in context")
     }
-
-    var entityType string
+    if name == "" {
+        rs.log.Warn("Name for new role cannot be empty")
+        return nil, fmt.Errorf("name for role cannot be empty")
+    }
+    entityType := "wms"
     if rd.UserType == "company" {
         entityType = "company"
-    } else {
-        entityType = "wms"
     }
-
-    role, err := rs.createLoggedIn(ctx, tx, entityType, name, description)
+    createRoleFn := func(innerTx *gorm.DB) (*types.Role, error) {
+        normalizedName := normalization.ParseInputString(name)
+        normalizedDescription := normalization.ParseInputString(description)
+        var ( exists bool err error )
+        if entityType == "company" {
+            exists, err = rs.roleRepo.NameExistsByCompanyID(ctx, innerTx, rd.CompanyID, normalizedName)
+        } else {
+            exists, err = rs.roleRepo.NameExistsByWmsID(ctx, innerTx, rd.WmsID, normalizedName)
+        }
+        if err != nil {
+            rs.log.Error("Failed checking role name existence", "error", err)
+            return nil, fmt.Errorf("error checking role name existence: %w", err)
+        }
+        if exists {
+            rs.log.Error("Role name already in use", "name", name, "entityType", entityType)
+            return nil, fmt.Errorf("role name is already in use")
+        }
+        newRole := &types.Role{
+            Name: normalizedName,
+            Description: &normalizedDescription,
+        }
+        if entityType == "company" {
+            newRole.CompanyID = rd.CompanyID
+        } else {
+            newRole.WmsID = rd.WmsID
+        }
+        newRoles, err := rs.Create(ctx, innerTx, []*types.Role{newRole})
+        if err != nil {
+            rs.log.Error("Failed to create new role", "error", err)
+            return nil, fmt.Errorf("failed to create new role: %w", err)
+        }
+        if len(newRoles) == 0 {
+            rs.log.Warn("Creating role returned no roles")
+            return nil, fmt.Errorf("creating role returned no roles")
+        }
+        return newRoles[0], nil
+    }
+    if tx != nil {
+        return createRoleFn(tx)
+    }
+    var role *types.Role
+    err := rs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+        var err error
+        role, err = createRoleFn(innerTx)
+        return err
+    })
     if err != nil {
-        return types.Role{}, err
+        return nil, err
     }
-
     var channel string
-    switch rd.UserType {
+    switch entityType {
     case "company":
-        if rd.CompanyID != uuid.Nil {
-            channel = "company:" + rd.CompanyID.String()
+        if role.CompanyID != nil && *role.CompanyID != uuid.Nil {
+            channel = "company:" + role.CompanyID.String()
         }
     case "wms":
-        if rd.WmsID != uuid.Nil {
-            channel = "wms:" + rd.WmsID.String()
+        if role.WmsID != nil && *role.WmsID != uuid.Nil {
+            channel = "wms:" + role.WmsID.String()
         }
     }
-
     if channel != "" {
         sseData := ssedata.GetSSEData(ctx)
         if sseData != nil {
             sseData.AppendMessage(sse.SSEMessage{
                 Channel: channel,
-                Event:   sse.SSEEventRoleCreated,
+                Event: sse.SSEEventRoleCreated,
             })
         }
     }
     return role, nil
 }
 
-// -------------------------------------------------------------------
-// CREATE LOGGED-IN
-// -------------------------------------------------------------------
-func (rs *roleService) createLoggedIn(ctx context.Context, tx *gorm.DB, entityType string, name string, description string) (types.Role, error) {
-    rs.log.Info("Starting createLoggedIn now...")
-    if tx != nil {
-        rs.log.Warn("Please use createLoggedInWithTransaction if you have a transaction")
-        return types.Role{}, fmt.Errorf("transaction passed into non-transaction handling function")
-    }
+//--------------------------------------------------------------------------------------------
+// UPDATE
+//--------------------------------------------------------------------------------------------
 
+func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, newPermSet []types.Permission) (*types.Role, error) {
+
+    rs.log.Info("UpdatePermissions starting now...")
     rd := requestdata.GetRequestData(ctx)
     if rd == nil {
-        rs.log.Warn("Request Data is not set in context")
-        return types.Role{}, fmt.Errorf("request data is not set in context")
-    }
-
-    nName := normalization.ParseInputString(name)
-    if nName == "" {
-        rs.log.Warn("No name provided to createLoggedIn")
-        return types.Role{}, fmt.Errorf("need a non-empty name to create role")
-    }
-
-    if entityType == "company" && rd.UserType != "company" {
-        rs.log.Warn("UserType mismatch. Expected company but got something else.")
-        return types.Role{}, fmt.Errorf("UserType mismatch: can't create company role as a non company user type")
-    }
-    if entityType == "wms" && rd.UserType != "wms" {
-        rs.log.Warn("UserType mismatch. Expected wms but got something else.")
-        return types.Role{}, fmt.Errorf("UserType mismatch: can't create wms role as a non wms user type")
-    }
-
-    var result types.Role
-    err := rs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
-        rolePtr, rErr := rs.createLoggedInWithTransaction(ctx, innerTx, entityType, nName, description)
-        if rErr != nil {
-            return rErr
-        }
-        if rolePtr == nil {
-            rs.log.Warn("createLoggedInWithTransaction returned nil role ptr")
-            return fmt.Errorf("nil role ptr returned from createLoggedInWithTransaction")
-        }
-        result = *rolePtr
-        return nil
-    })
-    if err != nil {
-        return types.Role{}, err
-    }
-    return result, nil
-}
-
-// -------------------------------------------------------------------
-// CREATE LOGGED-IN WITH TRANSACTION
-// -------------------------------------------------------------------
-func (rs *roleService) createLoggedInWithTransaction(ctx context.Context, tx *gorm.DB, entityType string, name string, description string) (*types.Role, error) {
-    rs.log.Info("Starting createLoggedInWithTransaction now...")
-    if tx == nil {
-        rs.log.Warn("createLoggedInWithTransaction called with a nil transaction")
-        return nil, fmt.Errorf("transaction is required and cannot be nil")
-    }
-
-    rd := requestdata.GetRequestData(ctx)
-    if rd == nil {
-        rs.log.Warn("RequestData not set in context")
+        rs.log.Warn("Request data not set in context")
         return nil, fmt.Errorf("request data not set in context")
     }
-
-    var entityID uuid.UUID
-    switch entityType {
-    case "company":
-        if rd.CompanyID == uuid.Nil {
-            rs.log.Warn("No CompanyID in RequestData")
-            return nil, fmt.Errorf("user does not have a valid company id in request data")
-        }
-        entityID = rd.CompanyID
-    case "wms":
-        if rd.WmsID == uuid.Nil {
-            rs.log.Warn("No WmsID in RequestData")
-            return nil, fmt.Errorf("user does not have a valid wms id in request data")
-        }
-        entityID = rd.WmsID
-    default:
-        rs.log.Warn("Unsupported entityType", "entityType", entityType)
-        return nil, fmt.Errorf("unsupported entityType: %s", entityType)
+    if roleID == uuid.Nil {
+        rs.log.Warn("No valid roleID passed")
+        return nil, fmt.Errorf("invalid roleID")
     }
-
-    var exists bool
-    var err error
-    if entityType == "company" {
-        exists, err = rs.roleRepo.NameExistsByCompanyID(ctx, tx, entityID, name)
-    } else {
-        exists, err = rs.roleRepo.NameExistsByWmsID(ctx, tx, entityID, name)
+    var entityType := "wms"
+    if rd.UserType == "company" {
+        entityType = "company"
     }
-    if err != nil {
-        rs.log.Warn("Failure checking new role name existence", "err", err)
-        return nil, fmt.Errorf("failed to check role name existence: %w", err)
-    }
-    if exists {
-        rs.log.Warn("Role name already exists for entity", "entityType", entityType, "name", name)
-        return nil, fmt.Errorf("role name %q already exists for %s", name, entityType)
-    }
-
-    newRole := &types.Role{
-        Name:        name,
-        Description: &description,
-    }
-    if entityType == "company" {
-        newRole.CompanyID = &entityID
-    } else {
-        newRole.WmsID = &entityID
-    }
-
-    newRoles, nrErr := rs.Create(ctx, tx, []*types.Role{newRole})
-    if nrErr != nil {
-        rs.log.Warn("Failure to create new role", "error", nrErr)
-        return nil, fmt.Errorf("failed to create new role: %w", nrErr)
-    }
-    if len(newRoles) == 0 {
-        rs.log.Warn("Creating role returned no items", "count", len(newRoles))
-        return nil, fmt.Errorf("creating role returned no roles")
-    }
-    finalRole := newRoles[0]
-    return finalRole, nil
-}
-
-// -------------------------------------------------------------------
-// UPDATE PERMISSIONS
-// -------------------------------------------------------------------
-func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, permissions []types.Permission) (*types.Role, error) {
-    rs.log.Info("UpdatePermissions starting now...")
-    if tx != nil {
-        rs.log.Warn("Use UpdatePermissionsWithTransaction if you are passing in a transaction")
-        return nil, fmt.Errorf("use UpdatePermissionsWithTransaction if you are passing in a transaction")
-    }
-
     var updatedRole *types.Role
-    err := rs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
-        r, e := rs.UpdatePermissionsWithTransaction(ctx, innerTx, roleId, permissions)
-        if e != nil {
-            return e
+    outerErr := rs.db.Transaction(func(innerTx *gorm.DB) error {
+        effectiveTx := innerTx
+        if tx != nil {
+            effectiveTx = tx
         }
-        updatedRole = r
+        loadedRoles, err := rs.roleRepo.GetByIDs(ctx, effectiveTx, []uuid.UUID{roleID})
+        if err != nil {
+            rs.log.Warn("Failed to load role by ID", "roleID", roleID, "error", err)
+            return fmt.Errorf("failed to load role: %w", err)
+        }
+        if len(loadedRoles) == 0 {
+            rs.log.Warn("No role found with that ID", "roleID", roleID)
+            return fmt.Errorf("no role found with that ID")
+        }
+        theRole := loadedRoles[0]
+        allPerms, allErr := rs.permissionRepo.GetAll(ctx, effectiveTx)
+        if allErr != nil {
+            rs.log.Warn("Failed to fetch all perms", "error", allErr)
+            return fmt.Errorf("cannot fetch all permissions: %w", allErr)
+        }
+        allPermCount := len(allPerms)
+        currentPerms := theRole.Permissions
+        currentPermCount := len(currentPerms)
+        hasAll := false
+        if currentPermCount == allPermCount {
+            permSet := make(map[uuid.UUID]bool)
+            for _, p := range currentPerms {
+                permSet[p.ID] = true
+            }
+            matchedAll := true
+            for _, p := range allPerms {
+                if !permSet[p.ID] {
+                    matchedAll = false
+                    break
+                }
+            }
+            hasAll = matchedAll
+        }
+        if len(newPermSet) == 0 {
+            rs.log.Debug("New permission set is empty; removing all perms from role", "roleID", theRole.ID)
+            if hasAll {
+                if err := rs.ensureAnotherAllPermsRoleInDomain(ctx, effectiveTx, theRole, allPerms); err != nil {
+                    return err
+                }
+            }
+            if unassocErr := rs.roleRepo.UnassociatePermissions(
+                ctx, effectiveTx, []*types.Role{theRole}, theRole.Permissions,
+            ); unassocErr != nil {
+                rs.log.Warn("Failed to remove perms from role", "error", unassocErr)
+                return fmt.Errorf("failed to remove all perms: %w", unassocErr)
+            }
+            rs.log.Info("Successfully removed all perms from role", "roleID", theRole.ID)
+
+        } else {
+            existingMap := make(map[uuid.UUID]bool, len(currentPerms))
+            for _, cp := range currentPerms {
+                existingMap[cp.ID] = true
+            }
+            incomingMap := make(map[uuid.UUID]bool, len(newPermSet))
+            for _, np := range newPermSet {
+                incomingMap[np.ID] = true
+            }
+
+            var toRemove []*types.Permission
+            var toAddIDs []uuid.UUID
+
+            for _, cp := range currentPerms {
+                if !incomingMap[cp.ID] {
+                    toRemove = append(toRemove, cp)
+                }
+            }
+            for _, np := range newPermSet {
+                if !existingMap[np.ID] {
+                    toAddIDs = append(toAddIDs, np.ID)
+                }
+            }
+            if hasAll && len(toRemove) > 0 {
+                if err := rs.ensureAnotherAllPermsRoleInDomain(ctx, effectiveTx, theRole, allPerms); err != nil {
+                    return err
+                }
+            }
+            if len(toRemove) > 0 {
+                rs.log.Debug("Removing perms from role", "count", len(toRemove), "roleID", theRole.ID)
+                if err := rs.roleRepo.UnassociatePermissions(ctx, effectiveTx, []*types.Role{theRole}, toRemove); err != nil {
+                    rs.log.Warn("Failed to unassociate perms", "error", err)
+                    return fmt.Errorf("failed to unassociate perms: %w", err)
+                }
+            }
+            if len(toAddIDs) > 0 {
+                rs.log.Debug("Adding perms to role", "count", len(toAddIDs), "roleID", theRole.ID)
+                realPerms, gErr := rs.permissionRepo.GetByIDs(ctx, effectiveTx, toAddIDs)
+                if gErr != nil {
+                    rs.log.Warn("Could not re‐fetch perms to add", "error", gErr)
+                    return fmt.Errorf("could not re‐fetch perms to add: %w", gErr)
+                }
+                if err := rs.roleRepo.AssociatePermissions(ctx, effectiveTx, []*types.Role{theRole}, realPerms); err != nil {
+                    rs.log.Warn("Failed to associate perms", "error", err)
+                    return fmt.Errorf("failed to associate perms: %w", err)
+                }
+            }
+        }
+        newList, reloadErr := rs.roleRepo.GetByIDs(ctx, effectiveTx, []uuid.UUID{theRole.ID})
+        if reloadErr != nil || len(newList) == 0 {
+            rs.log.Warn("Cannot reload role after updates", "error", reloadErr)
+            return fmt.Errorf("cannot reload role after updates: %v", reloadErr)
+        }
+        updatedRole = newList[0]
         return nil
     })
-    if err != nil {
-        return nil, err
+
+    if outerErr != nil {
+        rs.log.Warn("UpdatePermissions transaction failed", "error", outerErr)
+        return nil, outerErr
     }
-    if updatedRole == nil {
-        return nil, fmt.Errorf("unexpected nil role returned from UpdatePermissionsWithTransaction")
+    rs.log.Info("UpdatePermissions completed successfully", "roleID", updatedRole.ID)
+    var channel string
+    switch entityType {
+    case "company":
+        if updatedRole.CompanyID != nil && *updatedRole.CompanyID != uuid.Nil {
+            channel = "company:" + updatedRole.CompanyID.String()
+        }
+    case "wms":
+        if updatedRole.WmsID != nil && *updatedRole.WmsID != uuid.Nil {
+            channel = "wms:" + updatedRole.WmsID.String()
+        }
+    }
+    if channel != "" {
+        sseData := ssedata.GetSSEData(ctx)
+        if sseData != nil {
+            sseData.AppendMessage(sse.SSEMessage{
+                Channel: channel,
+                Event: sse.SSEEventRoleUpdated,
+            })
+        }
     }
     return updatedRole, nil
 }
 
-// -------------------------------------------------------------------
-// UPDATE PERMISSIONS WITH TRANSACTION
-// -------------------------------------------------------------------
-func (rs *roleService) UpdatePermissionsWithTransaction(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, permissions []types.Permission) (*types.Role, error) {
-    rs.log.Info("UpdatePermissionsWithTransaction starting now...")
-    if tx == nil {
-        rs.log.Warn("Transaction is nil in UpdatePermissionsWithTransaction")
-        return nil, fmt.Errorf("transaction cannot be nil in UpdatePermissionsWithTransaction")
+func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, newName string, newDescription string) (*types.Role, error) {
+    rs.log.Info("Starting UpdateRole now...")
+    
+    rd := requestdata.GetRequestData(ctx)
+    if rd == nil {
+        rs.log.Warn("No request data in context")
+        return nil, fmt.Errorf("no request data in context")
     }
-
-    rs.log.Info("Fetching existing role with permissions...")
-    existingRoles, err := rs.roleRepo.GetByIDs(ctx, tx, []uuid.UUID{roleId})
-    if err != nil {
-        rs.log.Warn("Failed to fetch the role by ID", "roleId", roleId, "error", err)
-        return nil, fmt.Errorf("failed to fetch role by ID: %w", err)
+    if roleID == uuid.Nil {
+        rs.log.Warn("Invalid roleID passed")
+        return nil, fmt.Errorf("invalid roleID")
     }
-    if len(existingRoles) == 0 {
-        rs.log.Warn("Role not found for the given ID", "roleId", roleId)
-        return nil, fmt.Errorf("role not found for ID: %s", roleId.String())
+    var entityType := "wms"
+    if rd.UserType == "company" {
+        entityType = "company"
     }
-
-    role := existingRoles[0]
-    if err := tx.Model(&role).Preload("Permissions").Find(&role).Error; err != nil {
-        rs.log.Error("Failed to preload role.Permissions", "error", err)
-        return nil, fmt.Errorf("failed to preload role permissions: %w", err)
-    }
-
-    // For "all-permissions" checks, load all known permissions
-    allPerms, err := rs.permissionRepo.GetAll(ctx, tx)
-    if err != nil {
-        rs.log.Warn("Failed to fetch all permissions", "error", err)
-        return nil, fmt.Errorf("failed to fetch all permissions: %w", err)
-    }
-
-    // Build current perms map
-    currentPermsMap := make(map[uuid.UUID]bool, len(role.Permissions))
-    for _, p := range role.Permissions {
-        currentPermsMap[p.ID] = true
-    }
-
-    // Build new perms map
-    newPermsMap := make(map[uuid.UUID]bool, len(permissions))
-    for _, p := range permissions {
-        newPermsMap[p.ID] = true
-    }
-
-    // is "all-permissions"?
-    hasAllPermissions := (len(role.Permissions) == len(allPerms))
-
-    // Figure out what to remove vs. add
-    var toRemove []uuid.UUID
-    var toAdd []uuid.UUID
-
-    for _, oldP := range role.Permissions {
-        if !newPermsMap[oldP.ID] {
-            toRemove = append(toRemove, oldP.ID)
+    var updatedRole *types.Role
+    outerErr := rs.db.Transaction(func(innerTx *gorm.DB) error {
+        effectiveTx := innerTx
+        if tx != nil {
+            effectiveTx = tx
         }
-    }
-    for _, newP := range permissions {
-        if !currentPermsMap[newP.ID] {
-            toAdd = append(toAdd, newP.ID)
+        roles, rErr := rs.roleRepo.GetByIDs(ctx, effectiveTx, []uuid.UUID{roleID})
+        if rErr != nil {
+            rs.log.Warn("Failed to load role by ID", "error", rErr)
+            return fmt.Errorf("failed to load role: %w", rErr)
         }
-    }
-
-    // If removing perms from the only role that has them all, ensure there's another "all-permissions" role
-    if hasAllPermissions && len(toRemove) > 0 {
-        rs.log.Info("Role currently has all permissions. Checking if removing is allowed...")
-
-        // Fetch sibling roles in the same company or wms
-        var siblingRoles []*types.Role
-        if role.CompanyID != nil && *role.CompanyID != uuid.Nil {
-            siblingRoles, err = rs.roleRepo.GetByCompanyIDs(ctx, tx, []uuid.UUID{*role.CompanyID})
-            if err != nil {
-                rs.log.Warn("Failed to fetch sibling roles for company", "companyID", *role.CompanyID)
-                return nil, fmt.Errorf("failed to fetch sibling roles for company: %w", err)
+        if len(roles) == 0 {
+            rs.log.Warn("No role found with that ID", "roleID", roleID)
+            return fmt.Errorf("no role found with that ID")
+        }
+        theRole := roles[0]
+        normalizedName := normalization.ParseInputString(newName)
+        if normalizedName != "" && !strings.EqualFold(normalizedName, theRole.Name) {
+            if theRole.CompanyID != nil && *theRole.CompanyID != uuid.Nil {
+                nameExists, nErr := rs.roleRepo.NameExistsByCompanyID(ctx, effectiveTx, *theRole.CompanyID, normalizedName)
+                if nErr != nil {
+                    rs.log.Warn("Error checking role name uniqueness by companyID", "error", nErr)
+                    return fmt.Errorf("failed checking name uniqueness: %w", nErr)
+                }
+                if nameExists {
+                    rs.log.Warn("Role name already used within company", "companyID", *theRole.CompanyID)
+                    return fmt.Errorf("role name '%s' already in use in company", normalizedName)
+                }
+            } else if theRole.WmsID != nil && *theRole.WmsID != uuid.Nil {
+                nameExists, nErr := rs.roleRepo.NameExistsByWmsID(ctx, effectiveTx, *theRole.WmsID)
+                if nErr != nil {
+                    rs.log.Warn("Error checking role name uniqueness by wmsID", "error", nErr)
+                    return fmt.Errorf("failed checking name uniqueness: %w", nErr)
+                }
+                if nameExists {
+                    rs.log.Warn("Role name already used within wms", "wmsID", *theRole.WmsID)
+                    return fmt.Errorf("role name '%s' already in use in wms", normalizedName)
+                }
             }
-        } else if role.WmsID != nil && *role.WmsID != uuid.Nil {
-            siblingRoles, err = rs.roleRepo.GetByWmsIDs(ctx, tx, []uuid.UUID{*role.WmsID})
-            if err != nil {
-                rs.log.Warn("Failed to fetch sibling roles for wms", "wmsID", *role.WmsID)
-                return nil, fmt.Errorf("failed to fetch sibling roles for wms: %w", err)
-            }
-        } else {
-            rs.log.Error("Role has no valid companyID or wmsID, cannot proceed")
-            return nil, fmt.Errorf("role is not associated with a company or wms")
+            theRole.Name = normalizedName
         }
+        normalizedDesc := normalization.ParseInputString(newDescription)
+        if !strings.EqualFold(normalizedDesc, theRole.Description) {
+            theRole.Description = &normalizedDesc
+        }
+        updatedSlice, upErr := rs.roleRepo.Update(ctx, effectiveTx, []*types.Role{theRole})
+        if upErr != nil {
+            rs.log.Warn("Failed to update role in DB", "error", upErr)
+            return fmt.Errorf("failed to update role: %w", upErr)
+        }
+        if len(updatedSlice) == 0 {
+            rs.log.Warn("No roles returned from update, unexpected")
+            return fmt.Errorf("no updated role returned, unexpected DB behavior")
+        }
+        updatedRole = updatedSlice[0]
+        return nil
+    })
+    if outerErr != nil {
+        return nil, outerErr
+    }
+    rs.log.Info("Successfully updated Role's name/description", "roleID", roleID)
+    var channel string
+    switch entityType {
+    case "company":
+        if updatedRole.CompanyID != nil && *updatedRole.CompanyID != uuid.Nil {
+            channel = "company:" + rd.CompanyID.String()
+        }
+    case "wms":
+        if updatedRole.WmsID != nil && *updatedRole.WmsID != uuid.Nil {
+            channel = "wms:" + rd.WmsID.String()
+        }
+    }
+    if channel != "" {
+        sseData := ssedata.GetSSEData(ctx)
+        if sseData != nil {
+            sseData.AppendMessage(sse.SSEMessage{
+                Channel: channel,
+                Event: sse.SSEEventRoleUpdated,
+            })
+        }
+    }
+    return updatedRole, nil
+}
 
-        // Filter out the current role from siblings
-        var otherRoles []*types.Role
-        for _, sr := range siblingRoles {
-            if sr.ID != role.ID {
-                otherRoles = append(otherRoles, sr)
+func (rs *roleService) DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID) error {
+    rs.log.Info("Starting DeleteRole now...", "roleID", roleID)
+    
+    rd := requestdata.GetRequestData(ctx)
+    if rd == nil {
+        rs.log.Warn("No request data in context")
+        return fmt.Errorf("no request data in context")
+    }
+    if roleID == uuid.Nil {
+        rs.log.Warn("Invalid roleID passed")
+        return fmt.Errorf("invalid roleID")
+    }
+    var entityType := "wms"
+    if rd.UserType == "company" {
+        entityType = "company"
+    }
+    return rs.db.Transaction(func(innerTx *gorm.DB) error {
+        effectiveTx := innerTx
+        if tx != nil {
+            effectiveTx = tx
+        }
+        roles, rErr := rs.roleRepo.GetByIDs(ctx, effectiveTx, []uuid.UUID{roleID})
+        if rErr != nil {
+            rs.log.Warn("Failed to load role by ID", "error", rErr)
+            return fmt.Errorf("failed to load role: %w", rErr)
+        }
+        if len(roles) == 0 {
+            rs.log.Warn("No role found with that ID", "roleID", roleID)
+            return fmt.Errorf("no role found with that ID")
+        }
+        theRole := roles[0]
+        users, uErr := rs.userRepo.GetByRoleIDs(ctx, effectiveTx, []uuid.UUID{theRole.ID})
+        if uErr != nil {
+            rs.log.Warn("Failed to load users by roleID for deletion check", "error", uErr)
+            return fmt.Errorf("failed to check user assignment: %w", uErr)
+        }
+        if len(users) > 0 {
+            rs.log.Warn("Cannot delete a Role with assigned users", "roleID", theRole.ID, "count", len(users))
+            return fmt.Errorf("cannot delete a Role that still has %d users(s) assigned", len(users))
+        }
+        allPerms, allErr := rs.permissionRepo.GetAll(ctx, effectiveTx)
+        if allErr != nil {
+            rs.log.Warn("Failed to load all perms in DeleteRole", "error", allErr)
+            return fmt.Errorf("failed to load all perms: %w", allErr)
+        }
+        allCount := len(allPerms)
+        currentPerms := theRole.Permissions
+        hasAllPerms := false
+        if len(currentPerms) == allCount {
+            permSet := make(map[uuid.UUID]bool, allCount)
+            for _, p := range currentPerms {
+                permSet[p.ID] = true
+            }
+            matched := true
+            for _, p := range allPerms {
+                if !permSet[p.ID] {
+                    matched = false
+                    break
+                }
+            }
+            hasAllPerms = matched
+        }
+        if hasAllPerms {
+            if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, allPerms); err != nil {
+                rs.log.Warn("Cannot delete the only all-perms role in its domain", "error", err)
+                return err
             }
         }
-
-        // Preload permissions for each sibling
-        for i := range otherRoles {
-            if err := tx.Model(otherRoles[i]).Preload("Permissions").Find(&otherRoles[i]).Error; err != nil {
-                rs.log.Warn("Failed to preload sibling role permissions", "roleID", otherRoles[i].ID, "error", err)
-                return nil, fmt.Errorf("failed to preload sibling role permissions: %w", err)
+        if delErr := rs.roleRepo.FullDeleteByRoles(ctx, effectiveTx, []*types.Role{theRole}); delErr != nil {
+            rs.log.Warn("Failed to fully delete role from DB", "error", delErr)
+            return fmt.Errorf("failed to delete role: %w", delErr)
+        }
+        rs.log.Info("Role successfully deleted", "roleID", theRole.ID)
+        var channel string
+        switch entityType {
+        case "company":
+            if theRole.CompanyID != nil && *theRole.CompanyID != uuid.Nil {
+                channel = "company:" + theRole.CompanyID.String()
+            }
+        case "wms":
+            if theRole.WmsID != nil && *theRole.WmsID != uuid.Nil {
+                channel = "wms:" + theRole.WmsID.String()
             }
         }
+        if channel != "" {
+            ssd := ssedata.GetSSEData(ctx)
+            if ssd != nil {
+                ssd.AppendMessage(sse.SSEMessage{
+                    Channel: channel,
+                    Event: sse.SSEEventRoleDeleted,
+                })
+            }
+        }
+        return nil
+    })
+}
 
-        // Check if at least one sibling also has all perms
-        var siblingWithAll bool
-        for _, sr := range otherRoles {
-            if len(sr.Permissions) == len(allPerms) {
-                siblingWithAll = true
+func (rs *roleService) ensureAnotherAllPermsRoleExists(ctx context.Context, tx *gorm.DB, theRole *types.Role, allPermCount int) error {
+    rs.log.Info("Checking if another role has all perms now...")
+    var rolesInDomain []*types.Role
+    var err error
+
+    if theRole.CompanyID != nil && *theRole.CompanyID != uuid.Nil {
+        rolesInDomain, err = rs.roleRepo.GetByCompanyIDs(ctx, tx, []uuid.UUID{*theRole.CompanyID})
+        if err != nil {
+            rs.log.Warn("Failed to load roles by companyID", "error", err)
+            return fmt.Errorf("failed loading roles by company: %w", err)
+        }
+    } else if theRole.WmsID != nil && *theRole.WmsID != uuid.Nil {
+        rolesInDomain, err = rs.roleRepo.GetByWmsIDs(ctx, tx, []uuid.UUID{*theRole.WmsID})
+        if err != nil {
+            rs.log.Warn("Failed to load roles by wmsID", "error", err)
+            return fmt.Errorf("failed loading roles by wms: %w", err)
+        }
+    } else {
+        rs.log.Warn("Role has neither companyID nor wmsID")
+        return fmt.Errorf("role missing domain")
+    }
+    if len(rolesInDomain) == 0 {
+        return fmt.Errorf("no other roles in domain; cannot remove perms from the only role")
+    }
+    var others []*types.Role
+    for _, r := range rolesInDomain {
+        if r.ID != theRole.ID {
+            others = append(others, r)
+        }
+    }
+    if len(others) == 0 {
+        return fmt.Errorf("this is the only role in the domain. Cannot remove perms")
+    }
+    allCount := len(allPerms)
+    for _, r := range others {
+        permsOfR := r.Permissions
+        if len(permsOfR) != allCount {
+            continue
+        }
+        permMap := make(map[uuid.UUID]bool, len(permsOfR))
+        for _, p := range permsOfR {
+            permMap[p.ID] = true
+        }
+        matched := true
+        for _, p := range allPerms {
+            if !permMap[p.ID] {
+                matched = false
                 break
             }
         }
-        if !siblingWithAll {
-            rs.log.Warn("No other role in the entity has all permissions. Cannot remove from the only 'all-perms' role.")
-            return nil, fmt.Errorf("cannot remove permissions from the only all-permissions role")
+        if matched {
+            rs.log.Debug("Another role in domain already has all perms", "otherRoleID", r.ID)
+            return nil
         }
     }
-
-    // Unassociate removed perms
-    if len(toRemove) > 0 {
-        rs.log.Info("Unassociating permissions from role...", "count", len(toRemove))
-        if err := rs.roleRepo.UnassociatePermissionsByIDs(ctx, tx, []uuid.UUID{role.ID}, toRemove); err != nil {
-            rs.log.Warn("Failed to unassociate permissions from role", "roleID", role.ID, "error", err)
-            return nil, fmt.Errorf("failed to unassociate permissions: %w", err)
-        }
-    }
-
-    // Associate new perms
-    if len(toAdd) > 0 {
-        rs.log.Info("Associating permissions with role...", "count", len(toAdd))
-        if err := rs.roleRepo.AssociatePermissionsByIDs(ctx, tx, []uuid.UUID{role.ID}, toAdd); err != nil {
-            rs.log.Warn("Failed to associate permissions with role", "roleID", role.ID, "error", err)
-            return nil, fmt.Errorf("failed to associate permissions: %w", err)
-        }
-    }
-
-    // Re-fetch updated role
-    var updatedRole types.Role
-    if err := tx.Model(&role).Preload("Permissions").First(&updatedRole).Error; err != nil {
-        rs.log.Warn("Failed to fetch updated role after permission changes", "error", err)
-        return nil, fmt.Errorf("failed to fetch updated role: %w", err)
-    }
-
-    rs.log.Info("Successfully updated permissions for role", "roleID", role.ID)
-    return &updatedRole, nil
-}
-
-// -------------------------------------------------------------------
-// UPDATE FIELDS
-// -------------------------------------------------------------------
-func (rs *roleService) UpdateFields(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, name string, description string) (types.Role, error) {
-    rs.log.Info("Starting UpdateFields for role now...")
-    if tx != nil {
-        rs.log.Warn("UpdateFields called with a transaction. Use UpdateFieldsWithTransaction.")
-        return types.Role{}, fmt.Errorf("use UpdateFieldsWithTransaction if you are passing in a transaction")
-    }
-
-    var updatedRole types.Role
-    err := rs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
-        r, e := rs.UpdateFieldsWithTransaction(ctx, innerTx, roleId, name, description)
-        if e != nil {
-            return e
-        }
-        updatedRole = *r
-        return nil
-    })
-    if err != nil {
-        return types.Role{}, err
-    }
-    return updatedRole, nil
-}
-
-// -------------------------------------------------------------------
-// UPDATE FIELDS WITH TRANSACTION
-// -------------------------------------------------------------------
-func (rs *roleService) UpdateFieldsWithTransaction(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, name string, description string) (*types.Role, error) {
-    rs.log.Info("UpdateFieldsWithTransaction starting now...")
-    if tx == nil {
-        rs.log.Warn("Transaction is nil in UpdateFieldsWithTransaction")
-        return nil, fmt.Errorf("transaction cannot be nil in UpdateFieldsWithTransaction")
-    }
-
-    rs.log.Info("Fetching existing role from DB...")
-    existingRoles, err := rs.roleRepo.GetByIDs(ctx, tx, []uuid.UUID{roleId})
-    if err != nil {
-        rs.log.Warn("Failed to fetch role by ID", "roleId", roleId, "error", err)
-        return nil, fmt.Errorf("failed to fetch role by ID: %w", err)
-    }
-    if len(existingRoles) == 0 {
-        rs.log.Warn("No role found for the given ID", "roleId", roleId)
-        return nil, fmt.Errorf("role not found for ID: %s", roleId.String())
-    }
-
-    role := existingRoles[0]
-
-    // Update name if not empty
-    if name != "" {
-        var exists bool
-        nName := normalization.ParseInputString(name)
-
-        // Check uniqueness within the same entity (company or wms)
-        if role.CompanyID != nil && *role.CompanyID != uuid.Nil {
-            exists, err = rs.roleRepo.NameExistsByCompanyID(ctx, tx, *role.CompanyID, nName)
-        } else if role.WmsID != nil && *role.WmsID != uuid.Nil {
-            exists, err = rs.roleRepo.NameExistsByWmsID(ctx, tx, *role.WmsID, nName)
-        } else {
-            rs.log.Warn("Role doesn't have either a wms or company associated")
-            return nil, fmt.Errorf("role has no wms or company association")
-        }
-        if err != nil {
-            rs.log.Warn("Failed to check name existence for new name for role", "err", err)
-            return nil, fmt.Errorf("failed to check name existence for new name for role: %w", err)
-        }
-        if exists {
-            rs.log.Warn("Name already in use for another role")
-            return nil, fmt.Errorf("name is already in use by another role")
-        }
-        role.Name = nName
-    }
-
-    // Update description if not "nochange"
-    if description != "nochange" {
-        role.Description = &description
-    }
-
-    rs.log.Info("Updating the role in DB with new fields...")
-    updated, err := rs.roleRepo.Update(ctx, tx, []*types.Role{role})
-    if err != nil {
-        rs.log.Warn("Failed to update role fields", "error", err)
-        return nil, fmt.Errorf("failed to update role fields: %w", err)
-    }
-    if len(updated) == 0 {
-        rs.log.Warn("No updated results returned from roleRepo.Update")
-        return nil, fmt.Errorf("no updated results returned from roleRepo.Update")
-    }
-
-    updatedRole := updated[0]
-    rs.log.Info("Successfully updated the role fields", "roleId", updatedRole.ID)
-    return updatedRole, nil
-}
-
-// -------------------------------------------------------------------
-// UPDATE ROLE (DYNAMIC)
-// -------------------------------------------------------------------
-//
-// name == ""         => skip name update
-// description=="..." => if "nochange", skip description; otherwise update
-// permissions==nil   => skip perms update; (non-nil => set exactly to the provided slice)
-func (rs *roleService) UpdateRole(
-    ctx context.Context,
-    tx *gorm.DB,
-    roleId uuid.UUID,
-    name string,
-    description string, // pass "nochange" if you want to skip description
-    permissions []types.Permission, // nil => skip perms; non-nil => set perms exactly
-) (types.Role, error) {
-
-    rs.log.Info("UpdateRole starting now...")
-    var finalRole types.Role
-
-    updateFn := func(innerTx *gorm.DB) error {
-        // 1) Update fields if name != "" or description != "nochange"
-        if name != "" || description != "nochange" {
-            rs.log.Info("Updating fields for role name/description...")
-            updatedFieldsRole, err := rs.UpdateFieldsWithTransaction(ctx, innerTx, roleId, name, description)
-            if err != nil {
-                return err
-            }
-            finalRole = *updatedFieldsRole
-        }
-
-        // 2) Update perms if permissions != nil (including empty slice)
-        if permissions != nil {
-            rs.log.Info("Updating permissions for role...")
-            updatedPermsRole, err := rs.UpdatePermissionsWithTransaction(ctx, innerTx, roleId, permissions)
-            if err != nil {
-                return err
-            }
-            finalRole = *updatedPermsRole
-        }
-
-        // 3) If NOTHING changed, just fetch the existing role
-        if name == "" && description == "nochange" && permissions == nil {
-            rs.log.Info("No fields or permissions to update. Just fetching the role.")
-            existing, err := rs.roleRepo.GetByIDs(ctx, innerTx, []uuid.UUID{roleId})
-            if err != nil {
-                return fmt.Errorf("failed to fetch role: %w", err)
-            }
-            if len(existing) == 0 {
-                return fmt.Errorf("role not found for ID: %s", roleId)
-            }
-            finalRole = *existing[0]
-        }
-
-        return nil
-    }
-
-    // Use existing transaction if provided, otherwise start a new one
-    if tx != nil {
-        rs.log.Info("Using the provided transaction for UpdateRole...")
-        if err := updateFn(tx); err != nil {
-            return types.Role{}, err
-        }
-    } else {
-        rs.log.Info("No transaction provided; creating one for UpdateRole...")
-        err := rs.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
-            return updateFn(innerTx)
-        })
-        if err != nil {
-            return types.Role{}, err
-        }
-    }
-
-    rs.log.Info("UpdateRole completed successfully.", "roleId", finalRole.ID)
-    return finalRole, nil
+    return fmt.Errorf("cannot remove all perms from the only role with all perms")
 }
 

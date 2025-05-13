@@ -124,7 +124,7 @@ func main() {
     log.Error("Fatal error: Cannot init AvatarService", "error", err)
     os.Exit(1)
   }
-  roleService := services.NewRoleService(thePG, log, roleRepo, avatarService)
+  roleService := services.NewRoleService(thePG, log, roleRepo, permissionRepo, userRepo, avatarService)
   authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, roleService, permissionRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
   myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo, invitationRepo, permissionRepo)

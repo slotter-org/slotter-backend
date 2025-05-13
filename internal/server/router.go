@@ -77,7 +77,10 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   protected.GET("/myroles", cfg.MeHandler.GetMyRole)
 
   //Role
-  protected.POST("/role", cfg.RoleHandler.CreateRole)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("create_roles")).POST("/role", cfg.RoleHandler.CreateRole)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_roles")).PATCH("/role", cfg.RoleHandler.UpdateRoleNameDesc)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_roles")).PATCH("/role/permission", cfg.RoleHandler.UpdateRolePermissions)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("delete_roles")).DELETE("/role", cfg.RoleHandler.DeleteRole)
 
   //MyCompany/MyWms
   protected.GET("/mycompany/warehouses", cfg.MyCompanyHandler.GetMyWarehouses)
