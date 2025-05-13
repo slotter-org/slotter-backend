@@ -20,7 +20,7 @@ import (
 
 type RoleService interface {
     Create(ctx context.Context, tx *gorm.DB, roles []*types.Role) ([]*types.Role, error)
-    CreateLoggedIn(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, name string, description string) (*types.Role, error)
+    CreateLoggedIn(ctx context.Context, tx *gorm.DB, name string, description string) (*types.Role, error)
     UpdatePermissions(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, newPermsSet []types.Permission) (*types.Role, error)
     UpdateRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, newName string, newDescription string) (*types.Role, error)
     DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID) error
