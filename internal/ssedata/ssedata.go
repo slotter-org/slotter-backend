@@ -6,7 +6,9 @@ import (
 	"github.com/slotter-org/slotter-backend/internal/sse"
 )
 
-var sseDataKey = struct{}{}
+type key struct{}
+
+var sseDataKey key
 
 type SSEData struct {
 	Messages []sse.SSEMessage

@@ -6,7 +6,9 @@ import (
   "github.com/google/uuid"
 )
 
-var requestDataKey = struct{}{}
+type key struct{}
+
+var requestDataKey key
 
 func WithRequestData(ctx context.Context, rd *RequestData) context.Context {
   return context.WithValue(ctx, requestDataKey, rd)

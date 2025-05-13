@@ -4,7 +4,9 @@ import (
 	"context"
 )
 
-var errorDataKey = struct{}{}
+type key struct{}
+
+var errorDataKey key
 
 type ErrorData struct {
 	Message string
