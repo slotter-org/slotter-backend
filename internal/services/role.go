@@ -179,7 +179,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
         rs.log.Warn("No valid roleID passed")
         return nil, fmt.Errorf("invalid roleID")
     }
-    var entityType := "wms"
+    entityType := "wms"
     if rd.UserType == "company" {
         entityType = "company"
     }
@@ -334,7 +334,7 @@ func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleId uuid.
         rs.log.Warn("Invalid roleID passed")
         return nil, fmt.Errorf("invalid roleID")
     }
-    var entityType := "wms"
+    entityType := "wms"
     if rd.UserType == "company" {
         entityType = "company"
     }
@@ -434,7 +434,7 @@ func (rs *roleService) DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.
         rs.log.Warn("Invalid roleID passed")
         return fmt.Errorf("invalid roleID")
     }
-    var entityType := "wms"
+    entityType := "wms"
     if rd.UserType == "company" {
         entityType = "company"
     }
