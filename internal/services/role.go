@@ -226,7 +226,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
         if len(newPermSet) == 0 {
             rs.log.Debug("New permission set is empty; removing all perms from role", "roleID", theRole.ID)
             if hasAll {
-                if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, allPerms); err != nil {
+                if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, len(allPerms)); err != nil {
                     return err
                 }
             }
@@ -262,7 +262,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
                 }
             }
             if hasAll && len(toRemove) > 0 {
-                if err := rs.ensureAnotherAllPermsRoleInExists(ctx, effectiveTx, theRole, allPerms); err != nil {
+                if err := rs.ensureAnotherAllPermsRoleInExists(ctx, effectiveTx, theRole, len(allPerms)); err != nil {
                     return err
                 }
             }
@@ -368,7 +368,7 @@ func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleID uuid.
                     return fmt.Errorf("role name '%s' already in use in company", normalizedName)
                 }
             } else if theRole.WmsID != nil && *theRole.WmsID != uuid.Nil {
-                nameExists, nErr := rs.roleRepo.NameExistsByWmsID(ctx, effectiveTx, *theRole.WmsID)
+                nameExists, nErr := rs.roleRepo.NameExistsByWmsID(ctx, effectiveTx, *theRole.WmsID, normalizedName)
                 if nErr != nil {
                     rs.log.Warn("Error checking role name uniqueness by wmsID", "error", nErr)
                     return fmt.Errorf("failed checking name uniqueness: %w", nErr)
@@ -486,7 +486,7 @@ func (rs *roleService) DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.
             hasAllPerms = matched
         }
         if hasAllPerms {
-            if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, allPerms); err != nil {
+            if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, len(allPerms)); err != nil {
                 rs.log.Warn("Cannot delete the only all-perms role in its domain", "error", err)
                 return err
             }
