@@ -523,6 +523,11 @@ func (rs *roleService) ensureAnotherAllPermsRoleExists(ctx context.Context, tx *
     rs.log.Info("Checking if another role has all perms now...")
     var rolesInDomain []*types.Role
     var err error
+    
+    allPerms, err := rs.permissionRepo.GetAll(ctx, tx)
+    if err != nil {
+        return fmt.Errorf("failed loading all permissions")
+    }
 
     if theRole.CompanyID != nil && *theRole.CompanyID != uuid.Nil {
         rolesInDomain, err = rs.roleRepo.GetByCompanyIDs(ctx, tx, []uuid.UUID{*theRole.CompanyID})
@@ -552,7 +557,7 @@ func (rs *roleService) ensureAnotherAllPermsRoleExists(ctx context.Context, tx *
     if len(others) == 0 {
         return fmt.Errorf("this is the only role in the domain. Cannot remove perms")
     }
-    allCount := allPermCount
+    allCount := len(allPerms)
     for _, r := range others {
         permsOfR := r.Permissions
         if len(permsOfR) != allCount {
@@ -563,7 +568,7 @@ func (rs *roleService) ensureAnotherAllPermsRoleExists(ctx context.Context, tx *
             permMap[p.ID] = true
         }
         matched := true
-        for _, p := range allCount {
+        for _, p := range allPerms {
             if !permMap[p.ID] {
                 matched = false
                 break
