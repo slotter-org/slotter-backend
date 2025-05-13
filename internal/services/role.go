@@ -114,9 +114,9 @@ func (rs *roleService) CreateLoggedIn(ctx context.Context, tx *gorm.DB, name str
             Description: &normalizedDescription,
         }
         if entityType == "company" {
-            newRole.CompanyID = rd.CompanyID
+            newRole.CompanyID = &rd.CompanyID
         } else {
-            newRole.WmsID = rd.WmsID
+            newRole.WmsID = &rd.WmsID
         }
         newRoles, err := rs.Create(ctx, innerTx, []*types.Role{newRole})
         if err != nil {
