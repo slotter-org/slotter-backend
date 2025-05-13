@@ -226,7 +226,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
         if len(newPermSet) == 0 {
             rs.log.Debug("New permission set is empty; removing all perms from role", "roleID", theRole.ID)
             if hasAll {
-                if err := rs.ensureAnotherAllPermsRoleInDomain(ctx, effectiveTx, theRole, allPerms); err != nil {
+                if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, allPerms); err != nil {
                     return err
                 }
             }
@@ -262,7 +262,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
                 }
             }
             if hasAll && len(toRemove) > 0 {
-                if err := rs.ensureAnotherAllPermsRoleInDomain(ctx, effectiveTx, theRole, allPerms); err != nil {
+                if err := rs.ensureAnotherAllPermsRoleInExists(ctx, effectiveTx, theRole, allPerms); err != nil {
                     return err
                 }
             }
@@ -323,7 +323,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
     return updatedRole, nil
 }
 
-func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleId uuid.UUID, newName string, newDescription string) (*types.Role, error) {
+func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID, newName string, newDescription string) (*types.Role, error) {
     rs.log.Info("Starting UpdateRole now...")
     
     rd := requestdata.GetRequestData(ctx)
