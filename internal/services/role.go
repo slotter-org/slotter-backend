@@ -26,8 +26,7 @@ type RoleService interface {
     DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.UUID) error
 }
 
-type roleService struct {
-    db              *gorm.DB
+type roleService struct { db              *gorm.DB
     log             *logger.Logger
     roleRepo        repos.RoleRepo
     permissionRepo  repos.PermissionRepo
@@ -262,7 +261,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
                 }
             }
             if hasAll && len(toRemove) > 0 {
-                if err := rs.ensureAnotherAllPermsRoleInExists(ctx, effectiveTx, theRole, len(allPerms)); err != nil {
+                if err := rs.ensureAnotherAllPermsRoleExists(ctx, effectiveTx, theRole, len(allPerms)); err != nil {
                     return err
                 }
             }
@@ -381,7 +380,7 @@ func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleID uuid.
             theRole.Name = normalizedName
         }
         normalizedDesc := normalization.ParseInputString(newDescription)
-        if !strings.EqualFold(normalizedDesc, theRole.Description) {
+        if !strings.EqualFold(normalizedDesc, *theRole.Description) {
             theRole.Description = &normalizedDesc
         }
         updatedSlice, upErr := rs.roleRepo.Update(ctx, effectiveTx, []*types.Role{theRole})
@@ -553,7 +552,7 @@ func (rs *roleService) ensureAnotherAllPermsRoleExists(ctx context.Context, tx *
     if len(others) == 0 {
         return fmt.Errorf("this is the only role in the domain. Cannot remove perms")
     }
-    allCount := len(allPerms)
+    allCount := allPermCount
     for _, r := range others {
         permsOfR := r.Permissions
         if len(permsOfR) != allCount {
