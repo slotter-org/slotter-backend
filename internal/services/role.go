@@ -563,7 +563,7 @@ func (rs *roleService) ensureAnotherAllPermsRoleExists(ctx context.Context, tx *
             permMap[p.ID] = true
         }
         matched := true
-        for _, p := range allPerms {
+        for _, p := range allCount {
             if !permMap[p.ID] {
                 matched = false
                 break
