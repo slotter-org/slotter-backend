@@ -129,7 +129,7 @@ func (rh *RoleHandler) UpdateRolePermissions(c *gin.Context) {
     c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role_id format"})
     return
   }
-  updatedRole, upErr := rh.roleService.UpdatePermissions(ctx, nil, roleUUID, req.Permissions)
+  _, upErr := rh.roleService.UpdatePermissions(ctx, nil, roleUUID, req.Permissions)
   if upErr != nil {
     c.JSON(http.StatusInternalServerError, gin.H{"error": upErr.Error()})
     return
@@ -146,7 +146,7 @@ func (rh *RoleHandler) UpdateRolePermissions(c *gin.Context) {
     }
     ssd.Messages = nil
   }
-  c.JSON(http.StatusOK, gin.H{"Role permissions updated successfully"})
+  c.JSON(http.StatusOK, gin.H{"message": "Role permissions updated successfully"})
 }
 
 //--------------------------------------------------------------------------------------
