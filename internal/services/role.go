@@ -94,7 +94,8 @@ func (rs *roleService) CreateLoggedIn(ctx context.Context, tx *gorm.DB, name str
     createRoleFn := func(innerTx *gorm.DB) (*types.Role, error) {
         normalizedName := normalization.ParseInputString(name)
         normalizedDescription := normalization.ParseInputString(description)
-        var ( exists bool err error )
+        var exists bool 
+        var err error
         if entityType == "company" {
             exists, err = rs.roleRepo.NameExistsByCompanyID(ctx, innerTx, rd.CompanyID, normalizedName)
         } else {
