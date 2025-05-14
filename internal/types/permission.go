@@ -9,8 +9,8 @@ import (
 
 type Permission struct {
   gorm.Model
-  ID                  uuid.UUID                 `gorm:"type:uuid;default:uuid_generate_v4();primaryKey"`
-  PermissionType      string                    `gorm:"uniqueIndex;not null;column:permission_type" json:"permission_type"`
+  ID                  uuid.UUID                 `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
+  PermissionType      string                    `gorm:"uniqueIndex;not null;column:permission_type" json:"permissionType"`
   Roles               []*Role                   `gorm:"many2many:permissions_roles;"`
 
 
