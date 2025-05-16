@@ -21,6 +21,21 @@ import (
 
 type InvitationService interface {
 	SendInvitation(ctx context.Context, inv *types.Invitation) error
+	UpdateInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName,newMessage string) (*types.Invitation, error)
+	updateInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName, newMessage string) (*types.Invitation, error) 
+	canUpdateInvitation(inv *types.Invitation) bool
+	UpdateInvitationRole(ctx context.Context, tx *gorm.DB, invID uuid.UUID, roleID uuid.UUID) (*types.Invitation, error)
+	updateInvitationRoleLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID, roleID uuid.UUID) (*types.Invitation, error)
+	canUpdateInvitationRole(inv *types.Invitation) bool
+	CancelInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
+	cancelInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
+	canCancelInvitation(inv *types.Invitation) bool
+	ResendInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
+	resendInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
+	canResendInvitation(inv *types.Invitation) bool
+	DeleteInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
+	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
+	canDeleteInvitation(inv *types.Invitation) bool
 }
 
 type invitationService struct {
@@ -312,4 +327,268 @@ func readFileAsBase64(path string) (string, error) {
 	}
 	encoded := base64.StdEncoding.EncodeToString(data)
 	return "data:" + mimeType + ";base64," + encoded, nil
+}
+
+func (is *invitationService) UpdateInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName, newMessage string) (*types.Invitation, error) {
+	if tx == nil {
+		var out *types.Invitation
+		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm) error {
+			updated, uErr := is.updateInvitationLogic(ctx, innerTx, invID, newName, newMessage)
+			if uErr != nil {
+				return uErr
+			}
+			out = updated
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	return is.updateInvitationLogic(ctx, tx, invID, newName, newMessage)
+}
+
+func (is *invitationService) updateInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName, newMessage string) (*types.Invitation, error) {
+	if invID == uuid.Nil {
+		return nil, fmt.Errorf("invalid invitation id")
+	}
+	existing, err := is.invitationRepo.GetByIDs(ctx, tx, []uuid.UUID{invID})
+	if err != nil || len(existing) == 0 {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	inv := existing[0]
+	if !is.canUpdateInvitation(inv) {
+		return nil, fmt.Errorf("invitation cannot be updated in status: %s", inv.Status)
+	}
+	if newName != nil && newName != "" {
+		inv.Name = &newName
+	}
+	if newMessage != nil && newMessage != "" {
+		inv.Message = &newMessage
+	}
+	updated, err := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})
+	if err != nil || len(updated) == 0 {
+		return nil, fmt.Errorf("failed to update invitation: %w", err)
+	}
+	return updated[0], nil
+}
+
+func (is *invitationService) canUpdateInvitation(inv *types.Invitation) bool {
+	switch inv.Status {
+	case is.invitationRepo.InvitationStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+func (is *invitationService) UpdateInvitationRole(ctx context.Context, tx *gorm.DB, invID, roleID uuid.UUID) (*types.Invitation, error) {
+	if tx == nil {
+		var out *types.Invitation
+		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+			updated, upErr := is.updateInvitationRoleLogic(ctx, innerTx, invID, roleID)
+			if upErr != nil {
+				return upErr
+			}
+			out = updated
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	return is.updateInvitationRoleLogic(ctx, tx, invID, roleID)
+}
+
+func (is *invitationService) updateInvitationRoleLogic(ctx context.Context, tx *gorm.DB, invID, roleID uuid.UUID) (*types.Invitation, error) {
+	existing, err := is.invitationRepo.GetByIDs(ctx, tx, []uuid.UUID{invID})
+	if err != nil || len(existing) == 0 {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	inv := existing[0]
+	if !is.canUpdateInvitation(inv) {
+		return nil, fmt.Errorf("invitation cannot update role in status: %s", inv.Status)
+	}
+	rd := requestdata.GetRequestData(ctx)
+	if rd == nil {
+		return nil, fmt.Errorf("request data missing in context")
+	}
+	if roleID == uuid.Nil {
+		return nil, fmt.Errorf("invalid role id")
+	}
+	if inv.WmsID != nil && *inv.WmsID != uuid.Nil {
+	roles, rErr := is.roleRepo.GetByIDs(ctx, tx, []uuid.UUID{roleID})
+		if rErr != nil || len(roles) == 0 {
+			return nil, fmt.Errorf("role not found")
+		}
+		theRole := roles[0]
+		if theRole.WmsID == nil || *theRole.WmsID != *inv.WmsID {
+			return nil, fmt.Errorf("role does not belong to the same wms as the invitation")
+		}
+	} else if inv.CompanyID != nil && *inv.CompanyID != uuid.Nil {
+	roles, rErr := is.roleRepo.GetByIDs(ctx, tx, []uuid.UUID{roleID})
+		if rErr != nil || len(roles) == 0 {
+			return nil, fmt.Errorf("role not found")
+		}
+		theRole := roles[0]
+		if theRole.CompanyID == nil || *theRole.CompanyID != *inv.CompanyID {
+			return nil, fmt.Errorf("role does not belong to the same company as the invitation")
+		}
+	} else {
+		return nil, fmt.Errorf("invitation has no wmsID/companyID, cannot proceed")
+	}
+	inv.RoleID = &roleID
+	updated, upErr := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})
+	if upErr != nil || len(updated) == 0 {
+		return nil, fmt.Errorf("failed to update invitation role: %w", upErr)
+	}
+	return updated[0], nil
+}
+
+func (is *invitationService) CancelInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
+	if tx == nil {
+		var out *types.Invitation
+		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+			updated, cErr := is.cancelInvitationLogic(ctx, innerTx, invID)
+			if cErr != nil {
+				return cErr
+			}
+			out = updated
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	return is.cancelInvitationLogic(ctx, tx, invID)
+}
+
+func (is *invitationService) cancelInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
+	if invID == uuid.Nil {
+		return nil, fmt.Errorf("invalid invtitation ID")
+	}
+	existing, err := is.invitationRepo.GetByIDs(ctx, tx, []uuid.UUID{invID})
+	if err != nil || len(existing) == 0 {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	inv := exisiting[0]
+	if !is.canCancelInvitation(inv) {
+		return nil, fmt.Errorf("cannot cancel invitation in status: %s", inv.Status)
+	}
+	inv.Status = is.invitationRepo.InvitationStatusCanceled
+	inv.ExpiresAt = time.Time{}
+	now := time.Now()
+	inv.CanceledAt = &now
+	updated, upErr := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})
+	if upErr != nil || len(updated) == 0 {
+		return nil, fmt.Errorf("failed to update invitation as canceled: %w", upErr)
+	}
+	return updated[0], nil
+}
+
+func (is *invitationService) canCancelInvitation(inv *types.Invitation) bool {
+	if inv.Status == is.invitationRepo.InvitationStatusPending {
+		return true
+	}
+	return false
+}
+
+func (is *invitationService) ResendInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
+	if tx == nil {
+		var out *types.Invitation
+		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+			updated, reErr := is.resendInvitationLogic(ctx, innerTx, invID)
+			if reErr != nil {
+				return reErr
+			}
+			out = updated
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+	return is.resendInvitationLogic(ctx, tx, invID)
+}
+
+func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
+	if invID == uuid.Nil {
+		return nil, fmt.Errorf("invalid invitation ID")
+	}
+	existing, err := is.invitationRepo.GetByIDs(ctx, tx, []uuid.UUID{invID})
+	if err != nil || len(existing) == 0 {
+		return nil, fmt.Errorf("invitation not found")
+	}
+	inv := existing[0]
+	if inv.Status == is.invitationRepo.InvitationStatusAccepted {
+		return nil, fmt.Errorf("cannot resend an already accepted invitation")
+	}
+	if inv.Status == is.invitationRepo.InvitationStatusPending {
+		return nil, fmt.Errorf("cannot resend an invitation that is still pending")
+	}
+	if inv.Status == is.invitationRepo.InvitationStatusCanceled || inv.Status == is.invitationRepo.InvitationStatusRejected || inv.Status == is.invitationRepo.InvitationStatusExpired {
+		inv.CanceledAt = nil
+		inv.RejectedAt = nil
+		inv.ExpiredAt = nil
+	}
+	inv.Status = is.invitationRepo.InvitationStatusPending
+	inv.Token = uuid.NewString()
+	inv.ExpiresAt = time.Now().Add(48 * time.Hour)
+	inv.CreatedAt = time.Now()
+	updated, upErr := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})
+	if upErr != nil || len(updated) == 0 {
+		return nil, fmt.Errorf("failed to update invitation for resend: %w", upErr)
+	}
+	final := updated[0]
+	linkURL := fmt.Sprintf("%s/register?token=%s", is.frontEndURL, final.Token)
+	if final.Email != nil && *final.Email != "" {
+		if eErr := is.sendInvitationEmail(ctx, *final.Email, linkURL, final); eErr != nil {
+			return nil, eErr
+		}
+	} else if final.PhoneNumber != nil && *final.PhoneNumber != "" {
+		textBody := fmt.Sprintf("Re-sent invitation link: %s", linkURL)
+		if tErr := is.textService.SendText(ctx, *final.PhoneNumber, textBody); tErr != nil {
+			return nil, tErr
+		}
+	}
+	return final, nil
+}
+
+func (is *invitationService) DeleteInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error {
+	if tx == nil {
+		return is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+			return is.deleteInvitationLogic(ctx, innerTx, invID)
+		})
+	}
+	return is.deleteInvitationLogic(ctx, tx, invID)
+}
+
+func (is *invitationService) deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error {
+	if invID == uuid.Nil {
+		return fmt.Errorf("invalid invitation ID")
+	}
+	existing, err := is.invitationRepo.GetByIDs(ctx, tx, []uuid.UUID{invID})
+	if err != nil || len(existing) == 0 {
+		return fmt.Errorf("invitation not found")
+	}
+	inv := existing[0]
+	if !is.canDeleteInvitation(inv) {
+		return fmt.Errorf("invitation is not in a deletable status: %s", inv.Status)
+	}
+	return is.invitationRepo.SoftDeleteByInvitations(ctx, tx, []*types.Invitation{inv})
+}
+
+func (is *invitationService) canDeleteInvitation(inv *types.Invitation) bool {
+	switch inv.Status {
+	case is.invitationRepo.InvitationStatusAccepted,
+			 is.invitationRepo.InvitationStatusCanceled,
+			 is.invitationRepo.InvitationStatusRejected,
+			 is.invitationRepo.InvitationStatusCanceled,
+			 is.invitationRepo.InvitationStatusExpired:
+		return true
+	}
+	return false
 }

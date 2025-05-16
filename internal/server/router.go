@@ -98,9 +98,13 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   protected.POST("/warehouse", cfg.WarehouseHandler.CreateWarehouse)
 
   //Invitations
-  invitations := protected.Group("/invitations")
-  invitations.Use(cfg.AuthMiddleware.RequirePermission("manage_invitations"))
-  invitations.POST("/", cfg.InvitationHandler.SendInvitation)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("create_invitations")).POST("/invitation", cfg.InvitationHandler.SendInvitation)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation", cfg.InvitationHandler.UpdateInvitationMsgNameDesc)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation/role", cfg.InvitationHandler.UpdateInvitationRole)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation/cancel", cfg.InvitationHandler.CancelInvitation)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation/resend", cfg.InvitationHandler.ResendInvitation)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("delete_invitations")).DELETE("/invitation", cfg.InvitationHandler.DeleteInvitation)
+  
 
   return router
 }
