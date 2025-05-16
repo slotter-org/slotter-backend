@@ -21,6 +21,9 @@ import (
 
 type InvitationService interface {
 	SendInvitation(ctx context.Context, inv *types.Invitation) error
+	CancelInvitation(ctx context.Context, invId uuid.UUID) error
+	AcceptInvitation(ctx context.Context, token string)
+	CheckInvitationValidity(ctx contex.Context, token string)
 }
 
 type invitationService struct {

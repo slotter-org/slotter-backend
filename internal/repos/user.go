@@ -373,7 +373,7 @@ func (ur *userRepo) GetByRoleIDs(ctx context.Context, tx *gorm.DB, roleIDs []uui
 
     ur.log.Info("Fetching users by roleIDs now...")
     if err := transaction.WithContext(ctx).
-        Distinct("users.*").
+        Distinct("*").
         Where("role_id IN (?)", roleIDs).
         Find(&results).Error; err != nil {
         ur.log.Error("Failed to fetch users by roleIDs", "error", err)
