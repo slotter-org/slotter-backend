@@ -14,13 +14,17 @@ import (
 
 	"github.com/slotter-org/slotter-backend/internal/logger"
 	"github.com/slotter-org/slotter-backend/internal/requestdata"
+	"github.com/slotter-org/slotter-backend/internal/sse"
+	"github.com/slotter-org/slotter-backend/internal/ssedata"
 	"github.com/slotter-org/slotter-backend/internal/repos"
 	"github.com/slotter-org/slotter-backend/internal/templates"
 	"github.com/slotter-org/slotter-backend/internal/types"
 )
 
 type InvitationService interface {
-	SendInvitation(ctx context.Context, inv *types.Invitation) error
+	SendInvitation(ctx context.Context, tx *gorm.DB, inv *types.Invitation) error
+	sendInvitationLogic(ctx context.Context, tx *gorm.DB, inv *types.Invitation) (*types.Invitation, error)
+	sendInvitationOutbound(ctx context.Context, inv *types.Invitation) error
 	UpdateInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName,newMessage string) (*types.Invitation, error)
 	updateInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName, newMessage string) (*types.Invitation, error) 
 	canUpdateInvitation(inv *types.Invitation) bool
@@ -36,6 +40,10 @@ type InvitationService interface {
 	DeleteInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
 	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
 	canDeleteInvitation(inv *types.Invitation) bool
+	ValidateInvitationToken(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error)
+	ExpirePendingInvitations(ctx context.Context, tx *gorm.DB) (int64, error)
+	expirePendingInvitationsLogic(ctx context.Context, tx *gorm.DB) (int64, error)
+	getInvitationSSEChannel(inv *types.Invitation) string
 }
 
 type invitationService struct {
@@ -49,11 +57,12 @@ type invitationService struct {
 	permissionRepo			repos.PermissionRepo
 	textService					TextService
 	emailService				EmailService
+	avatarService				AvatarService
 	brandLogoPath				string
 	frontEndURL					string
 }
 
-func NewInvitationService(
+func NewInvitationService(jj
 	db									*gorm.DB,
 	log									*logger.Logger,
 	invitationRepo			repos.InvitationRepo,
@@ -64,6 +73,7 @@ func NewInvitationService(
 	permissionRepo			repos.PermissionRepo,
 	textService					TextService,
 	emailService				EmailService,
+	avatarService				AvatarService,
 ) InvitationService {
 	serviceLog := log.With("service", "InvitationService")
 	rawLogoPath := os.Getenv("SLOTTER_BRAND_LOGO_PATH")
@@ -97,50 +107,92 @@ func NewInvitationService(
 		permissionRepo:		permissionRepo,
 		emailService:			emailService,
 		textService:			textService,
+		avatarService:    avatarService,
 		brandLogoPath:		finalLogoBase64,
 		frontEndURL:			frontEndURL,
 	}
 }
 
-func (is *invitationService) SendInvitation(ctx context.Context, inv *types.Invitation) error {
-	if inv == nil {
-		return fmt.Errorf("invitation is nil")
+func (is *invitationService) SendInvitation(ctx context.Context, tx *gorm.DB, inv *types.Invitation) error {
+	// If tx is provided, just use it and do everything inline.
+	// Otherwise, create a new transaction block.
+	if tx != nil {
+		// Do transaction-bound work inside the provided tx
+		finalInv, err := is.sendInvitationLogic(ctx, tx, inv)
+		if err != nil {
+			return err
+		}
+		// Now that DB changes are done, send the actual invitation (email or text) 
+		return is.sendInvitationOutbound(ctx, finalInv)
 	}
+
+	// No tx provided. Create our own.
+	var finalInv *types.Invitation
+	err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+		localInv, logicErr := is.sendInvitationLogic(ctx, innerTx, inv)
+		if logicErr != nil {
+			return logicErr
+		}
+		finalInv = localInv
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Post-transaction: send email or text
+	return is.sendInvitationOutbound(ctx, finalInv)
+}
+
+// sendInvitationLogic performs all the DB operations in the transaction:
+//  1) Validates the requesting user + perms
+//  2) Checks for existing invites or existing user phone/email
+//  3) Creates the Invitation
+//  4) Generates/uploads the Invitation avatar
+//  5) Updates the Invitation record with the avatar fields
+func (is *invitationService) sendInvitationLogic(ctx context.Context, tx *gorm.DB, inv *types.Invitation) (*types.Invitation, error) {
+
+	// 0) Basic nil checks
+	if inv == nil {
+		return nil, fmt.Errorf("invitation is nil")
+	}
+
 	rd := requestdata.GetRequestData(ctx)
 	if rd == nil {
 		is.log.Warn("Request Data not set in context, Cannot proceed.")
-		return fmt.Errorf("Request Data not set in context.")
+		return nil, fmt.Errorf("Request Data not set in context.")
 	}
 	if rd.UserID == uuid.Nil {
 		is.log.Warn("UserID not set in request data, Cannot proceed.")
-		return fmt.Errorf("UserID not set in request data.")
+		return nil, fmt.Errorf("UserID not set in request data.")
 	}
 
-	//1) Get user and ensure that they have manage_invitations permission
-	foundUsers, ufErr := is.userRepo.GetByIDs(ctx, nil, []uuid.UUID{rd.UserID})
+	// 1) Get user and verify manage_invitations permission
+	foundUsers, ufErr := is.userRepo.GetByIDs(ctx, tx, []uuid.UUID{rd.UserID})
 	if ufErr != nil {
 		is.log.Warn("Error fetching user by ID", "error", ufErr)
-		return fmt.Errorf("failed to fetch userr by ID: %w", ufErr)
+		return nil, fmt.Errorf("failed to fetch user by ID: %w", ufErr)
 	}
 	if len(foundUsers) == 0 {
 		is.log.Warn("No user found with that ID", "id", rd.UserID)
-		return fmt.Errorf("no user found with that ID.")
+		return nil, fmt.Errorf("no user found with that ID")
 	}
 	user := foundUsers[0]
 	if user.RoleID == nil || *user.RoleID == uuid.Nil {
 		is.log.Warn("User has no role assigned.", "roleID", user.RoleID)
-		return fmt.Errorf("User has no role assigned.")
+		return nil, fmt.Errorf("user has no role assigned")
 	}
-	foundRoles, rfErr := is.roleRepo.GetByIDs(ctx, nil, []uuid.UUID{*user.RoleID})
+	foundRoles, rfErr := is.roleRepo.GetByIDs(ctx, tx, []uuid.UUID{*user.RoleID})
 	if rfErr != nil {
 		is.log.Warn("Error fetching user role by ID.", "error", rfErr)
-		return fmt.Errorf("Error fetching user role by ID: %w", rfErr)
+		return nil, fmt.Errorf("error fetching user role by ID: %w", rfErr)
 	}
 	if len(foundRoles) == 0 {
-		is.log.Warn("No role found with the given role ID.", "count", len(foundRoles))
-		return fmt.Errorf("No role found with that ID.")
+		is.log.Warn("No role found with the given role ID.", "roleID", *user.RoleID)
+		return nil, fmt.Errorf("no role found with that ID")
 	}
 	role := foundRoles[0]
+
 	var hasPermission bool
 	for _, perm := range role.Permissions {
 		if perm.PermissionType == "manage_invitations" {
@@ -150,142 +202,184 @@ func (is *invitationService) SendInvitation(ctx context.Context, inv *types.Invi
 	}
 	if !hasPermission {
 		is.log.Warn("User does not have permission to manage invitations.")
-		return fmt.Errorf("User does not have permission to mangage invitations.")
+		return nil, fmt.Errorf("user does not have permission to manage invitations")
 	}
 
-	//2) Determine whether inviting via phone or email. Exactly one must be set.
+	// 2) Exactly one of Email or Phone must be set
 	var inviteMethod string
 	if inv.Email != nil && *inv.Email != "" && inv.PhoneNumber != nil && *inv.PhoneNumber != "" {
-		return fmt.Errorf("Cannot have both email and phone number set for an invitation.")
+		return nil, fmt.Errorf("cannot have both email and phone set for invitation")
 	} else if (inv.Email == nil || *inv.Email == "") && (inv.PhoneNumber == nil || *inv.PhoneNumber == "") {
-		return fmt.Errorf("Must provide either an email or phone number for invitation.")
+		return nil, fmt.Errorf("must provide either email or phone for invitation")
 	} else if inv.Email != nil && *inv.Email != "" {
 		inviteMethod = "email"
 	} else {
 		inviteMethod = "phone"
 	}
 
-	//3) Validate InvitationType against user type
+	// 3) Validate InvitationType against the user type
 	switch user.UserType {
 	case "wms":
-		if inv.InvitationType != types.InvitationTypeJoinWms && inv.InvitationType != types.InvitationTypeJoinWmsWithNewCompany {
-			return fmt.Errorf("Invalid invitation type for Wms User: %s", inv.InvitationType)
+		if inv.InvitationType != types.InvitationTypeJoinWms && 
+		   inv.InvitationType != types.InvitationTypeJoinWmsWithNewCompany {
+			return nil, fmt.Errorf("invalid invitation type for WMS user: %s", inv.InvitationType)
 		}
 		inv.WmsID = user.WmsID
+
 	case "company":
 		if inv.InvitationType != types.InvitationTypeJoinCompany {
-			return fmt.Errorf("Invalid invitation type for Company User: %s", inv.InvitationType)
+			return nil, fmt.Errorf("invalid invitation type for Company user: %s", inv.InvitationType)
 		}
 		inv.CompanyID = user.CompanyID
+
 	default:
-		return fmt.Errorf("Unknown user type: %s", user.UserType)
+		return nil, fmt.Errorf("unknown user type: %s", user.UserType)
 	}
 
-	//4) Transaction to check if user/email/phone already exist or if there is a pending invite for that email/phone with the same wms/company
-	err := is.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		//A) Check if there is already a pending invitation for the same Wms/Company + email/phone
-		if inviteMethod == "email" {
-			existingInvs, getErr := is.invitationRepo.GetByEmails(ctx, tx, []string{*inv.Email})
-			if getErr != nil {
-				is.log.Warn("Error fetching existing invitations by email", "error", getErr)
-				return fmt.Errorf("Failed checking existing invitations by email: %w", getErr)
-			}
-			for _, eInv := range existingInvs {
-				if eInv.Status == types.InvitationStatusPending && eInv.WmsID == inv.WmsID && eInv.CompanyID == inv.CompanyID {
-					return fmt.Errorf("There is already a pending invitation for that email under this Wms/Company")
-				}
-			}
-		} else {
-			existingInvs, getErr := is.invitationRepo.GetByPhoneNumbers(ctx, tx, []string{*inv.PhoneNumber})
-			if getErr != nil {
-				is.log.Warn("Error fetching existing invitations by phone number", "error", getErr)
-				return fmt.Errorf("Failed checking existing invitations by phone number: %w", getErr)
-			}
-			for _, pInv := range existingInvs {
-				if pInv.Status == types.InvitationStatusPending && pInv.WmsID == inv.WmsID && pInv.CompanyID == inv.CompanyID {
-					return fmt.Errorf("There is already a pending invitation for that phone number under this Wms/Company")
-				}
-			}
+	// 4) Check for existing invites + user phone/email existence + create record
+	if inviteMethod == "email" {
+		existingInvs, getErr := is.invitationRepo.GetByEmails(ctx, tx, []string{*inv.Email})
+		if getErr != nil {
+			is.log.Warn("Error fetching existing invitations by email", "error", getErr)
+			return nil, fmt.Errorf("failed checking existing invitations by email: %w", getErr)
 		}
-		//B) If inviting by email, ensure no user with that email already exists
-		if inviteMethod == "email" {
-			emailExists, eErr := is.userRepo.EmailExists(ctx, tx, *inv.Email)
-			if eErr != nil {
-				is.log.Warn("Error checking email existence", "error", eErr)
-				return fmt.Errorf("Failed checking email existence: %w", eErr)
-			}
-			if emailExists {
-				return fmt.Errorf("That email is already in use.")
-			}
-		} else {
-			//C) If inviting by phone, ensure no user with that phone exists
-			phoneExists, pErr := is.userRepo.PhoneNumberExists(ctx, tx, *inv.PhoneNumber)
-			if pErr != nil {
-				is.log.Warn("Error checking phone number existence", "error", pErr)
-				return fmt.Errorf("Failed checking phone number existence: %w", pErr)
-			}
-			if phoneExists {
-				return fmt.Errorf("That phone number is already in use.")
+		for _, eInv := range existingInvs {
+			if eInv.Status == types.InvitationStatusPending && 
+			   eInv.WmsID == inv.WmsID && eInv.CompanyID == inv.CompanyID {
+				return nil, fmt.Errorf("there is already a pending invitation for that email under this Wms/Company")
 			}
 		}
 
-		//5) Fill out invitation fields
-		inv.InviteUserID = user.ID
-		inv.Status = types.InvitationStatusPending
-		if inv.Token == "" {
-			inv.Token = uuid.NewString()
+		// ensure no user with that email already exists
+		emailExists, eErr := is.userRepo.EmailExists(ctx, tx, *inv.Email)
+		if eErr != nil {
+			is.log.Warn("Error checking email existence", "error", eErr)
+			return nil, fmt.Errorf("failed checking email existence: %w", eErr)
 		}
-		if inv.ExpiresAt.IsZero() {
-			inv.ExpiresAt = time.Now().Add(48 * time.Hour)
+		if emailExists {
+			return nil, fmt.Errorf("that email is already in use")
 		}
 
-		//6) Create in DB
-		_, cErr := is.invitationRepo.Create(ctx, tx, []*types.Invitation{inv})
-		if cErr != nil {
-			return fmt.Errorf("Failed to create invitation: %w", cErr)
+	} else { // phone
+		existingInvs, getErr := is.invitationRepo.GetByPhoneNumbers(ctx, tx, []string{*inv.PhoneNumber})
+		if getErr != nil {
+			is.log.Warn("Error fetching existing invitations by phone", "error", getErr)
+			return nil, fmt.Errorf("failed checking existing invitations by phone: %w", getErr)
 		}
-		return nil
-	})
-	if err != nil {
-		return err
+		for _, pInv := range existingInvs {
+			if pInv.Status == types.InvitationStatusPending && 
+			   pInv.WmsID == inv.WmsID && pInv.CompanyID == inv.CompanyID {
+				return nil, fmt.Errorf("there is already a pending invitation for that phone number under this Wms/Company")
+			}
+		}
+
+		// ensure no user with that phone already exists
+		phoneExists, pErr := is.userRepo.PhoneNumberExists(ctx, tx, *inv.PhoneNumber)
+		if pErr != nil {
+			is.log.Warn("Error checking phone number existence", "error", pErr)
+			return nil, fmt.Errorf("failed checking phone number existence: %w", pErr)
+		}
+		if phoneExists {
+			return nil, fmt.Errorf("that phone number is already in use")
+		}
 	}
 
-	//7) Post-transaction send (so the DB changes are not rolled back if sending fails)
+	// Fill out invitation fields
+	inv.InviteUserID = user.ID
+	inv.Status = types.InvitationStatusPending
+	if inv.Token == "" {
+		inv.Token = uuid.NewString()
+	}
+	if inv.ExpiresAt.IsZero() {
+		inv.ExpiresAt = time.Now().Add(48 * time.Hour)
+	}
+
+	// Create in DB
+	_, cErr := is.invitationRepo.Create(ctx, tx, []*types.Invitation{inv})
+	if cErr != nil {
+		return nil, fmt.Errorf("failed to create invitation: %w", cErr)
+	}
+
+	// 5) Generate & upload avatar for the Invitation
+	invWithAvatar, avErr := is.avatarService.CreateAndUploadInvitationAvatar(ctx, tx, inv)
+	if avErr != nil {
+		return nil, fmt.Errorf("failed to create/upload invitation avatar: %w", avErr)
+	}
+
+	updatedInvSlice, upErr := is.invitationRepo.Update(ctx, tx, []*types.Invitation{invWithAvatar})
+	if upErr != nil || len(updatedInvSlice) == 0 {
+		return nil, fmt.Errorf("failed to update invitation with avatar: %w", upErr)
+	} 
+	final := updatedInvSlice[0]
+	channel := is.getInvitationSSEChannel(final)
+	if channel != "" {
+		ssd := ssedata.GetSSEData(ctx)
+		if ssd != nil {
+			ssd.AppendMessage(sse.SSEMessage{
+				Channel: channel,
+				Event: sse.SSEEventInvitationCreated,
+			})
+		}
+	}
+	return final, nil
+}
+
+// sendInvitationOutbound is called *after* the transaction commits
+// to send the actual invitation (email or SMS).
+func (is *invitationService) sendInvitationOutbound(ctx context.Context, inv *types.Invitation) error {
+	// Build the link
 	linkURL := fmt.Sprintf("%s/register?token=%s", is.frontEndURL, inv.Token)
+
+	// Determine which contact method to use
+	var inviteMethod string
+	if inv.Email != nil && *inv.Email != "" {
+		inviteMethod = "email"
+	} else if inv.PhoneNumber != nil && *inv.PhoneNumber != "" {
+		inviteMethod = "phone"
+	} else {
+		// Edge case: no contact info
+		return fmt.Errorf("invitation has no email or phone set")
+	}
+
+	// If using email, build and send
 	if inviteMethod == "email" {
 		var finalAvatarURL string
-		if inv.WmsID != nil || *inv.WmsID != uuid.Nil {
+
+		if inv.WmsID != nil && *inv.WmsID != uuid.Nil {
 			foundWms, _ := is.wmsRepo.GetByIDs(ctx, nil, []uuid.UUID{*inv.WmsID})
 			if len(foundWms) > 0 {
 				finalAvatarURL = foundWms[0].AvatarURL
 			}
 		}
-		if inv.CompanyID != nil || *inv.CompanyID != uuid.Nil {
+		if inv.CompanyID != nil && *inv.CompanyID != uuid.Nil {
 			foundCompany, _ := is.companyRepo.GetByIDs(ctx, nil, []uuid.UUID{*inv.CompanyID})
 			if len(foundCompany) > 0 {
 				finalAvatarURL = foundCompany[0].AvatarURL
 			}
 		}
+
 		templateData := templates.InvitationEmailData{
-			Logo:						is.brandLogoPath,
+			Logo:           is.brandLogoPath,
 			InvitationLink: linkURL,
-			AvatarURL:			finalAvatarURL,
-			InvitationType:	templates.InvitationType(string(inv.InvitationType)),
-			WmsName:				"",
-			CompanyName:		"",
+			AvatarURL:      finalAvatarURL,
+			InvitationType: templates.InvitationType(string(inv.InvitationType)),
+			WmsName:        "",
+			CompanyName:    "",
 		}
-		if inv.WmsID != nil || *inv.WmsID != uuid.Nil {
+		// Optionally fill WmsName/CompanyName for better email rendering
+		if inv.WmsID != nil && *inv.WmsID != uuid.Nil {
 			foundWms, _ := is.wmsRepo.GetByIDs(ctx, nil, []uuid.UUID{*inv.WmsID})
 			if len(foundWms) > 0 {
 				templateData.WmsName = foundWms[0].Name
 			}
 		}
-		if inv.CompanyID != nil || *inv.CompanyID != uuid.Nil {
+		if inv.CompanyID != nil && *inv.CompanyID != uuid.Nil {
 			foundCompany, _ := is.companyRepo.GetByIDs(ctx, nil, []uuid.UUID{*inv.CompanyID})
 			if len(foundCompany) > 0 {
 				templateData.CompanyName = foundCompany[0].Name
 			}
 		}
+
 		htmlContent, tplErr := templates.RenderInvitationHTML(templateData)
 		if tplErr != nil {
 			is.log.Warn("Failed to render invitation HTML template", "error", tplErr)
@@ -294,16 +388,18 @@ func (is *invitationService) SendInvitation(ctx context.Context, inv *types.Invi
 		plainText := fmt.Sprintf("You have been invited to join Slotter! Click here: %s", linkURL)
 		subject := "You've Been Invited to Slotter!"
 
-		if err := is.emailService.SendEmail(ctx, *inv.Email, subject, plainText, htmlContent, "invitation"); err != nil {
-			is.log.Warn("Failed to send invitation email", "error", err)
-			return err
+		if sendErr := is.emailService.SendEmail(ctx, *inv.Email, subject, plainText, htmlContent, "invitation"); sendErr != nil {
+			is.log.Warn("Failed to send invitation email", "error", sendErr)
+			return sendErr
 		}
-	} else {
-		textBody := fmt.Sprintf("Slotter invitation! Click here: %s", linkURL)
-		if err := is.textService.SendText(ctx, *inv.PhoneNumber, textBody); err != nil {
-			is.log.Warn("Failed to send invitation text", "error", err)
-			return err
-		}
+		return nil
+	}
+
+	// Otherwise, phone
+	textBody := fmt.Sprintf("Slotter invitation! Click here: %s", linkURL)
+	if err := is.textService.SendText(ctx, *inv.PhoneNumber, textBody); err != nil {
+		is.log.Warn("Failed to send invitation text", "error", err)
+		return err
 	}
 	return nil
 }
@@ -370,12 +466,23 @@ func (is *invitationService) updateInvitationLogic(ctx context.Context, tx *gorm
 	if err != nil || len(updated) == 0 {
 		return nil, fmt.Errorf("failed to update invitation: %w", err)
 	}
-	return updated[0], nil
+	final := updated[0]
+	channel := is.getInvitationSSEChannel(final)
+	if channel != "" {
+		ssd := ssedata.GetSSEData(ctx)
+		if ssd != nil {
+			ssd.AppendMessage(sse.SSEMessage{
+				Channel: channel,
+				Event: sse.SSEEventInvitationUpdated,
+			})
+		}
+	}
+	return final, nil
 }
 
 func (is *invitationService) canUpdateInvitation(inv *types.Invitation) bool {
 	switch inv.Status {
-	case is.invitationRepo.InvitationStatusPending:
+	case types.InvitationStatusPending:
 		return true
 	default:
 		return false
@@ -443,7 +550,18 @@ func (is *invitationService) updateInvitationRoleLogic(ctx context.Context, tx *
 	if upErr != nil || len(updated) == 0 {
 		return nil, fmt.Errorf("failed to update invitation role: %w", upErr)
 	}
-	return updated[0], nil
+	final := updated[0]
+	channel := is.getInvitationSSEChannel(final)
+	if channel != "" {
+		ssd := ssedata.GetSSEData(ctx)
+		if ssd != nil {
+			ssd.AppendMessage(sse.SSEMessage{
+				Channel: channel,
+				Event: sse.SSEEventInvitationUpdated,
+			})
+		}
+	}
+	return final, nil
 }
 
 func (is *invitationService) CancelInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
@@ -477,7 +595,7 @@ func (is *invitationService) cancelInvitationLogic(ctx context.Context, tx *gorm
 	if !is.canCancelInvitation(inv) {
 		return nil, fmt.Errorf("cannot cancel invitation in status: %s", inv.Status)
 	}
-	inv.Status = is.invitationRepo.InvitationStatusCanceled
+	inv.Status = types.InvitationStatusCanceled
 	inv.ExpiresAt = time.Time{}
 	now := time.Now()
 	inv.CanceledAt = &now
@@ -485,11 +603,21 @@ func (is *invitationService) cancelInvitationLogic(ctx context.Context, tx *gorm
 	if upErr != nil || len(updated) == 0 {
 		return nil, fmt.Errorf("failed to update invitation as canceled: %w", upErr)
 	}
-	return updated[0], nil
+	final := updated[0]
+	channel := is.getInvitationSSEChannel(final)
+	if channel != "" {
+		if ssd != nil {
+			ssd.AppendMessage(sse.SSEMessage{
+				Channel: channel,
+				Event: sse.SSEEventInvitationCanceled,
+			})
+		}
+	}
+	return final, nil
 }
 
 func (is *invitationService) canCancelInvitation(inv *types.Invitation) bool {
-	if inv.Status == is.invitationRepo.InvitationStatusPending {
+	if inv.Status == types.InvitationStatusPending {
 		return true
 	}
 	return false
@@ -523,18 +651,18 @@ func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm
 		return nil, fmt.Errorf("invitation not found")
 	}
 	inv := existing[0]
-	if inv.Status == is.invitationRepo.InvitationStatusAccepted {
+	if inv.Status == types.InvitationStatusAccepted {
 		return nil, fmt.Errorf("cannot resend an already accepted invitation")
 	}
-	if inv.Status == is.invitationRepo.InvitationStatusPending {
+	if inv.Status == types.InvitationStatusPending {
 		return nil, fmt.Errorf("cannot resend an invitation that is still pending")
 	}
-	if inv.Status == is.invitationRepo.InvitationStatusCanceled || inv.Status == is.invitationRepo.InvitationStatusRejected || inv.Status == is.invitationRepo.InvitationStatusExpired {
+	if inv.Status == types.InvitationStatusCanceled || inv.Status == types.InvitationStatusRejected || inv.Status == types.InvitationStatusExpired {
 		inv.CanceledAt = nil
 		inv.RejectedAt = nil
 		inv.ExpiredAt = nil
 	}
-	inv.Status = is.invitationRepo.InvitationStatusPending
+	inv.Status = types.InvitationStatusPending
 	inv.Token = uuid.NewString()
 	inv.ExpiresAt = time.Now().Add(48 * time.Hour)
 	inv.CreatedAt = time.Now()
@@ -552,6 +680,16 @@ func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm
 		textBody := fmt.Sprintf("Re-sent invitation link: %s", linkURL)
 		if tErr := is.textService.SendText(ctx, *final.PhoneNumber, textBody); tErr != nil {
 			return nil, tErr
+		}
+	}
+	channel := is.getInvitationSSEChannel(final)
+	if channel != "" {
+		ssd := ssedata.GetSSEData(ctx)
+		if ssd != nil {
+			ssd.AppendMessage(sse.SSEMessage{
+				Channel: channel,
+				Event: sse.SSEEventInvitationResent,
+			})
 		}
 	}
 	return final, nil
@@ -578,17 +716,107 @@ func (is *invitationService) deleteInvitationLogic(ctx context.Context, tx *gorm
 	if !is.canDeleteInvitation(inv) {
 		return fmt.Errorf("invitation is not in a deletable status: %s", inv.Status)
 	}
-	return is.invitationRepo.SoftDeleteByInvitations(ctx, tx, []*types.Invitation{inv})
+	if err := is.invitationRepo.SoftDeleteByInvitations(ctx, tx, []*types.Invitation{inv}); err != nil {
+		return err
+	}
+	channel := is.getInvitationSSEChannel(inv)
+	if channel != "" {
+		ssd := ssedata.GetSSEData(ctx)
+		if ssd != nil {
+			ssd.AppendMessage(sse.SSEMessage{
+				Channel: channel,
+				Event: sse.SSEEventInvitationDeleted,
+			})
+		}
+	}
+	return nil
 }
 
 func (is *invitationService) canDeleteInvitation(inv *types.Invitation) bool {
 	switch inv.Status {
-	case is.invitationRepo.InvitationStatusAccepted,
-			 is.invitationRepo.InvitationStatusCanceled,
-			 is.invitationRepo.InvitationStatusRejected,
-			 is.invitationRepo.InvitationStatusCanceled,
-			 is.invitationRepo.InvitationStatusExpired:
+	case types.InvitationStatusAccepted,
+			 types.InvitationStatusCanceled,
+			 types.InvitationStatusRejected,
+			 types.InvitationStatusCanceled,
+			 types.InvitationStatusExpired:
 		return true
 	}
 	return false
+}
+
+func (is *invitationService) ValidateInvitationToken(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error) {
+	if tx != nil {
+		return is.validateInvitationTokenLogic(ctx, tx, token)
+	}
+	var out *types.Invitation
+	err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+		inv, logicErr := is.validateInvitationTokenLogic(ctx, innerTx, token)
+		if logicErr != nil {
+			return logicErr
+		}
+		out = inv
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (is *invitationService) validateInvitationTokenLogic(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error) {
+	if token == "" {
+		return nil, fmt.Errorf("empty invitation token")
+	}
+	foundInvs, err := is.invitationRepo.GetByTokens(ctx, tx, []string{token})
+	if err != nil {
+		is.log.Warn("Failed fetching invitation by token", "error", err)
+		return nil, fmt.Errorf("failed fetching invitation by token: %w", err)
+	}
+	if len(foundInvs) == 0 {
+		return nil, fmt.Errorf("no invitation found for that token")
+	}
+	if len(foundInvs) > 1 {
+		return nil, fmt.Errorf("mutliple invitations found for that token")
+	}
+	inv := foundInvs[0]
+	if inv.Status != types.InvitationStatusPending {
+		return nil, fmt.Errorf("invitation is not pending (status: %s)", inv.Status)
+	}
+	if time.Now().After(inv.ExpiresAt) {
+		return nil, fmt.Errorf("invitation token is expired")
+	}
+	return inv, nil
+}
+
+func (is *invitationService) ExpirePendingInvitations(ctx context.Context, tx *gorm.DB) (int64, error) {
+	if tx != nil {
+		return is.expirePendingInvitationsLogic(ctx, tx)
+	}
+	var totalExpired int64
+	err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+		expired, innerErr := is.expirePendingInvitationsLogic(ctx, innerTx)
+		if innerErr != nil {
+			return innerErr
+		}
+		totalExpired = expired
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return totalExpired, nil
+}
+
+func (is *invitationService) expirePendingInvitationsLogic(ctx context.Context, tx *gorm.DB) (int64, error) {
+	return is.invitationRepo.BulkExpireInvitations(ctx, tx)
+}
+
+func (is *invitationService) getInvitationSSEChannel(inv *types.Invitation) string {
+	if inv.WmsID != nil && *inv.WmsID != uuid.Nil {
+		return "wms:" + inv.WmsID.String()
+	}
+	if inv.CompanyID != nil && *inv.CompanyID != uuid.Nil {
+		return "company:" + inv.CompanyID.String()
+	}
+	return ""
 }

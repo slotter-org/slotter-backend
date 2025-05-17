@@ -34,6 +34,8 @@ type InvitationRepo interface {
 
     FullDeleteByIDs(ctx context.Context, tx *gorm.DB, inviteIDs []uuid.UUID) error
     FullDeleteByInvitations(ctx context.Context, tx *gorm.DB, invites []*types.Invitation) error
+
+    BulkExpireInvitations(ctx context.Context, tx *gorm.DB) (int64, error)
 }
 
 type invitationRepo struct {
@@ -101,7 +103,7 @@ func (ir *invitationRepo) GetByTokens(ctx context.Context, tx *gorm.DB, tokens [
     }
     if err := transaction.WithContext(ctx).
         Clauses(clause.Locking{Strength: "UPDATE"}).
-        Where("token IN ?", tokens).
+        Where("token IN ?", tokens).jjG
         Find(&results).Error; err != nil {
         ir.log.Error("Failed to fetch invitations by tokens", "error", err)
         return nil, err
@@ -177,8 +179,7 @@ func (ir *invitationRepo) GetByWmsIDs(ctx context.Context, tx *gorm.DB, wmsIDs [
 }
 
 func (ir *invitationRepo) GetByCompanyIDs(ctx context.Context, tx *gorm.DB, companyIDs []uuid.UUID) ([]*types.Invitation, error) {
-    ir.log.Info("InvitationRepo.GetByCompanyIDs started")
-
+    ir.log.Info("InvitationRepo...GetByCompanyIDs started")
     transaction := tx
     if transaction == nil {
         transaction = ir.db
@@ -189,7 +190,8 @@ func (ir *invitationRepo) GetByCompanyIDs(ctx context.Context, tx *gorm.DB, comp
     }
     if err := transaction.WithContext(ctx).
         Clauses(clause.Locking{Strength: "UPDATE"}).
-        Where(&results).Error; err != nil {
+        Where("company_id IN ?", companyIDs).
+        Find(&results).Error; err != nil {
         ir.log.Error("Failed to fetch invitations by companyIDs", "error", err)
         return nil, err
     }
@@ -370,3 +372,29 @@ func (ir *invitationRepo) FullDeleteByInvitations(ctx context.Context, tx *gorm.
     }
     return ir.FullDeleteByIDs(ctx, tx, ids)
 }
+
+func (ir *invitationRepo) BulkExpireInvitations(ctx context.Context, tx *gorm.DB) (int64, error) {
+    ir.log.Info("InvitationRepo.BulkExpireInvitations started")
+
+    db := tx
+    if db == nil {
+        db = ir.db
+    }
+    now := time.Now()
+    result := db.WithContext(ctx).
+        Model(&types.Invitation{}).
+        Where("status = ? AND expires_at <= ?", types.InvitationStatusPending, now).
+        Updates(map[string]interface{}{
+            "status": types.InvitationStatusExpired,
+            "expired_at": now,
+        })
+    if result.Error != nil {
+        ir.log.Error("Failed to bulk expire invitations", "error", result.Error)
+        return 0, result.Error
+    }
+    rowsAffected := result.RowsAffected
+    ir.log.Info("BulkExpireInvitations updated invitations", "count", rowsAffected)
+    return rowsAffected, nil
+}
+
+

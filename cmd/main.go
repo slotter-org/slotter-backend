@@ -129,7 +129,7 @@ func main() {
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
   myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo, invitationRepo, permissionRepo)
   myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo, userRepo, roleRepo, invitationRepo, permissionRepo)
-  invitationService := services.NewInvitationService(thePG, log, invitationRepo, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, textService, emailService)
+  invitationService := services.NewInvitationService(thePG, log, invitationRepo, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, textService, emailService, avatarService)
   warehouseService := services.NewWarehouseService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, permissionRepo, warehouseRepo)
   log.Info("Services Set Up From Main Successful :)")
 
@@ -140,7 +140,7 @@ func main() {
   meHandler := handlers.NewMeHandler(meService)
   myCompanyHandler := handlers.NewMyCompanyHandler(myCompanyService)
   myWmsHandler := handlers.NewMyWmsHandler(myWmsService)
-  invitationHandler := handlers.NewInvitationHandler(invitationService)
+  invitationHandler := handlers.NewInvitationHandler(invitationService, sseHub)
   warehouseHandler := handlers.NewWarehouseHandler(warehouseService, wsHub)
   roleHandler := handlers.NewRoleHandler(roleService, sseHub)
   wsHandler := handlers.WsHandler(wsHub, log)

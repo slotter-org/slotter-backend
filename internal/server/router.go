@@ -53,6 +53,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   {
     api.POST("/register", cfg.AuthHandler.Register)
     api.POST("/login", cfg.AuthHandler.Login)
+    api.POST("/invitation/validtoken", cfg.InvitationHandler.ValidateInvitationToken)
   }
 
 
@@ -97,9 +98,9 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   //Warehouse
   protected.POST("/warehouse", cfg.WarehouseHandler.CreateWarehouse)
 
-  //Invitations
+  //Invitations  
   protected.Use(cfg.AuthMiddleware.RequirePermission("create_invitations")).POST("/invitation", cfg.InvitationHandler.SendInvitation)
-  protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation", cfg.InvitationHandler.UpdateInvitationMsgNameDesc)
+  protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation", cfg.InvitationHandler.UpdateInvitationMsgName)
   protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation/role", cfg.InvitationHandler.UpdateInvitationRole)
   protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation/cancel", cfg.InvitationHandler.CancelInvitation)
   protected.Use(cfg.AuthMiddleware.RequirePermission("update_invitations")).PATCH("/invitation/resend", cfg.InvitationHandler.ResendInvitation)
