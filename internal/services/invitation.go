@@ -30,7 +30,6 @@ type InvitationService interface {
 	canUpdateInvitation(inv *types.Invitation) bool
 	UpdateInvitationRole(ctx context.Context, tx *gorm.DB, invID uuid.UUID, roleID uuid.UUID) (*types.Invitation, error)
 	updateInvitationRoleLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID, roleID uuid.UUID) (*types.Invitation, error)
-	canUpdateInvitationRole(inv *types.Invitation) bool
 	CancelInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	cancelInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	canCancelInvitation(inv *types.Invitation) bool
@@ -455,10 +454,10 @@ func (is *invitationService) updateInvitationLogic(ctx context.Context, tx *gorm
 	if !is.canUpdateInvitation(inv) {
 		return nil, fmt.Errorf("invitation cannot be updated in status: %s", inv.Status)
 	}
-	if newName != "" && newName != nil {
+	if newName != "" {
 		inv.Name = &newName
 	}
-	if newMessage != "" && newMessage != nil {
+	if newMessage != "" {
 		inv.Message = &newMessage
 	}
 	updated, err := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})
