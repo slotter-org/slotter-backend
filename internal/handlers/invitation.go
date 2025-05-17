@@ -4,6 +4,7 @@ import (
   "net/http"
   
   "github.com/gin-gonic/gin"
+  "github.com/google/uuid"
   
   "github.com/slotter-org/slotter-backend/internal/sse"
   "github.com/slotter-org/slotter-backend/internal/ssedata"
