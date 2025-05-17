@@ -25,9 +25,9 @@ type InvitationRepo interface {
     GetByCompanyIDs(ctx context.Context, tx *gorm.DB, companyIDs []uuid.UUID) ([]*types.Invitation, error)
 
     Update(ctx context.Context, tx *gorm.DB, invites []*types.Invitation) ([]*types.Invitation, error)
-    MarkStatus(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, status types.InvitationStatus) error
-    MarkAccepted(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, acceptedAt time.Time) error
-    MarkCanceled(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, canceledAt time.Time) error
+    //MarkStatus(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, status types.InvitationStatus) error
+    //MarkAccepted(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, acceptedAt time.Time) error
+    //MarkCanceled(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, canceledAt time.Time) error
 
     SoftDeleteByIDs(ctx context.Context, tx *gorm.DB, inviteIDs []uuid.UUID) error
     SoftDeleteByInvitations(ctx context.Context, tx *gorm.DB, invites []*types.Invitation) error
@@ -220,6 +220,7 @@ func (ir *invitationRepo) Update(ctx context.Context, tx *gorm.DB, invites []*ty
     return invites, nil
 }
 
+/*
 func (ir *invitationRepo) MarkStatus(ctx context.Context, tx *gorm.DB, inviteID uuid.UUID, status types.InvitationStatus) error {
     ir.log.Info("InvitationRepo.MarkStatus started", "inviteID", inviteID, "status", status)
 
@@ -303,7 +304,7 @@ func (ir *invitationRepo) MarkCanceled(ctx context.Context, tx *gorm.DB, inviteI
     }
     return nil
 }
-
+*/
 func (ir *invitationRepo) SoftDeleteByIDs(ctx context.Context, tx *gorm.DB, inviteIDs []uuid.UUID) error {
     ir.log.Info("InvitationRepo.SoftDeleteByIDs started")
 
