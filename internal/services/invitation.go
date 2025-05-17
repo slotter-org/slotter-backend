@@ -62,7 +62,7 @@ type invitationService struct {
 	frontEndURL					string
 }
 
-func NewInvitationService(jj
+func NewInvitationService(
 	db									*gorm.DB,
 	log									*logger.Logger,
 	invitationRepo			repos.InvitationRepo,
