@@ -589,7 +589,7 @@ func (is *invitationService) cancelInvitationLogic(ctx context.Context, tx *gorm
 	if err != nil || len(existing) == 0 {
 		return nil, fmt.Errorf("invitation not found")
 	}
-	inv := exisiting[0]
+	inv := existing[0]
 	if !is.canCancelInvitation(inv) {
 		return nil, fmt.Errorf("cannot cancel invitation in status: %s", inv.Status)
 	}
