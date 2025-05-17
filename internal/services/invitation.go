@@ -604,6 +604,7 @@ func (is *invitationService) cancelInvitationLogic(ctx context.Context, tx *gorm
 	final := updated[0]
 	channel := is.getInvitationSSEChannel(final)
 	if channel != "" {
+		ssd := ssedata.GetSSEData(ctx)
 		if ssd != nil {
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
@@ -622,22 +623,41 @@ func (is *invitationService) canCancelInvitation(inv *types.Invitation) bool {
 }
 
 func (is *invitationService) ResendInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
-	if tx == nil {
-		var out *types.Invitation
-		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
-			updated, reErr := is.resendInvitationLogic(ctx, innerTx, invID)
-			if reErr != nil {
-				return reErr
-			}
-			out = updated
-			return nil
-		})
+	if tx != nil {
+		// Use the provided transaction
+		finalInv, err := is.resendInvitationLogic(ctx, tx, invID)
 		if err != nil {
 			return nil, err
 		}
-		return out, nil
+		// After the transaction logic, send the outbound invitation
+		outErr := is.sendInvitationOutbound(ctx, finalInv)
+		if outErr != nil {
+			is.log.Warn("Failed to resend invitation outbound", "error", outErr)
+			return finalInv, outErr
+		}
+		return finalInv, nil
 	}
-	return is.resendInvitationLogic(ctx, tx, invID)
+
+	// No transaction provided, so start our own.
+	var finalInv *types.Invitation
+	err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
+		inv, logicErr := is.resendInvitationLogic(ctx, innerTx, invID)
+		if logicErr != nil {
+			return logicErr
+		}
+		finalInv = inv
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Now that DB changes have committed, do the outbound send.
+	outErr := is.sendInvitationOutbound(ctx, finalInv)
+	if outErr != nil {
+		is.log.Warn("Failed to resend invitation outbound", "error", outErr)
+		return finalInv, outErr
+	}
+	return finalInv, nil
 }
 
 func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error) {
@@ -655,7 +675,9 @@ func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm
 	if inv.Status == types.InvitationStatusPending {
 		return nil, fmt.Errorf("cannot resend an invitation that is still pending")
 	}
-	if inv.Status == types.InvitationStatusCanceled || inv.Status == types.InvitationStatusRejected || inv.Status == types.InvitationStatusExpired {
+	if inv.Status == types.InvitationStatusCanceled || 
+	   inv.Status == types.InvitationStatusRejected || 
+	   inv.Status == types.InvitationStatusExpired {
 		inv.CanceledAt = nil
 		inv.RejectedAt = nil
 		inv.ExpiredAt = nil
@@ -664,29 +686,21 @@ func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm
 	inv.Token = uuid.NewString()
 	inv.ExpiresAt = time.Now().Add(48 * time.Hour)
 	inv.CreatedAt = time.Now()
+
 	updated, upErr := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})
 	if upErr != nil || len(updated) == 0 {
 		return nil, fmt.Errorf("failed to update invitation for resend: %w", upErr)
 	}
 	final := updated[0]
-	linkURL := fmt.Sprintf("%s/register?token=%s", is.frontEndURL, final.Token)
-	if final.Email != nil && *final.Email != "" {
-		if eErr := is.sendInvitationEmail(ctx, *final.Email, linkURL, final); eErr != nil {
-			return nil, eErr
-		}
-	} else if final.PhoneNumber != nil && *final.PhoneNumber != "" {
-		textBody := fmt.Sprintf("Re-sent invitation link: %s", linkURL)
-		if tErr := is.textService.SendText(ctx, *final.PhoneNumber, textBody); tErr != nil {
-			return nil, tErr
-		}
-	}
+
+	// SSE event inside the transaction
 	channel := is.getInvitationSSEChannel(final)
 	if channel != "" {
 		ssd := ssedata.GetSSEData(ctx)
 		if ssd != nil {
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
-				Event: sse.SSEEventInvitationResent,
+				Event:   sse.SSEEventInvitationResent,
 			})
 		}
 	}
