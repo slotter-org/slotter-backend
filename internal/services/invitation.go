@@ -747,7 +747,6 @@ func (is *invitationService) deleteInvitationLogic(ctx context.Context, tx *gorm
 func (is *invitationService) canDeleteInvitation(inv *types.Invitation) bool {
 	switch inv.Status {
 	case types.InvitationStatusAccepted,
-			 types.InvitationStatusCanceled,
 			 types.InvitationStatusRejected,
 			 types.InvitationStatusCanceled,
 			 types.InvitationStatusExpired:
