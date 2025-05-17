@@ -238,11 +238,11 @@ func (ir *invitationRepo) MarkStatus(ctx context.Context, tx *gorm.DB, inviteID 
     inv.Status = status
     switch status {
     case types.InvitationStatusAccepted:
-        inv.AcceptedAt = time.Now()
+        inv.AcceptedAt = &time.Now()
     case types.InvitationStatusCanceled:
-        inv.CanceledAt = time.Now()
+        inv.CanceledAt = &time.Now()
     case types.InvitationStatusExpired:
-        inv.CanceledAt = time.Now()
+        inv.CanceledAt = &time.Now()
     default:
 
     }
@@ -268,9 +268,9 @@ func (ir *invitationRepo) MarkAccepted(ctx context.Context, tx *gorm.DB, inviteI
     }
     inv.Status = types.InvitationStatusAccepted
     if acceptedAt.IsZero() {
-        inv.AcceptedAt = time.Now()
+        inv.AcceptedAt = &time.Now()
     } else {
-        inv.AcceptedAt = acceptedAt
+        inv.AcceptedAt = &acceptedAt
     }
     if err := transaction.WithContext(ctx).Save(&inv).Error; err != nil {
         return err
@@ -294,7 +294,7 @@ func (ir *invitationRepo) MarkCanceled(ctx context.Context, tx *gorm.DB, inviteI
     }
     inv.Status = types.InvitationStatusCanceled
     if canceledAt.IsZero() {
-        inv.CanceledAt = time.Now()
+        inv.CanceledAt = &time.Now()
     } else {
         inv.CanceledAt = canceledAt
     }
