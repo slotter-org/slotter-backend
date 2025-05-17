@@ -14,6 +14,7 @@ const (
   InvitationStatusAccepted  InvitationStatus = "accepted"
   InvitationStatusCanceled  InvitationStatus = "canceled"
   InvitationStatusExpired   InvitationStatus = "expired"
+  InvitationStatusRejected  InvitationStatus = "rejected"
 )
 
 type InvitationType string

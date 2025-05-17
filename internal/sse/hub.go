@@ -26,6 +26,12 @@ const (
 	SSEEventRoleCreated				 SSEEvent = "RoleCreated"
 	SSEEventRoleDeleted				 SSEEvent = "RoleDeleted"
 	SSEEventRoleUpdated				 SSEEvent = "RoleUpdated"
+	SSEEventInvitationCreated	 SSEEvent = "InvitationCreated"
+	SSEEventInvitationAccepted SSEEvent = "InvitationAccepted"
+	SSEEventInvitationCanceled SSEEvent = "InvitationCanceled"
+	SSEEventInvitationResent	 SSEEvent = "InvitationResent"
+	SSEEventInvitationDeleted  SSEEvent = "InvitationDeleted"
+	SSEEventInvitationExpired	 SSEEvent = "InvitationExpired"
 )
 
 type SSEMessage struct {

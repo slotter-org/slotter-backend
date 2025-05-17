@@ -36,7 +36,6 @@ type InvitationService interface {
 	canCancelInvitation(inv *types.Invitation) bool
 	ResendInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	resendInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
-	canResendInvitation(inv *types.Invitation) bool
 	DeleteInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
 	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
 	canDeleteInvitation(inv *types.Invitation) bool
