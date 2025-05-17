@@ -37,7 +37,8 @@ type InvitationService interface {
 	ResendInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	resendInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	DeleteInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
-	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error canDeleteInvitation(inv *types.Invitation) bool
+	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error 
+	canDeleteInvitation(inv *types.Invitation) bool
 	ValidateInvitationToken(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error)
 	ExpirePendingInvitations(ctx context.Context, tx *gorm.DB) (int64, error)
 	expirePendingInvitationsLogic(ctx context.Context, tx *gorm.DB) (int64, error)
