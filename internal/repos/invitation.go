@@ -103,7 +103,7 @@ func (ir *invitationRepo) GetByTokens(ctx context.Context, tx *gorm.DB, tokens [
     }
     if err := transaction.WithContext(ctx).
         Clauses(clause.Locking{Strength: "UPDATE"}).
-        Where("token IN ?", tokens).jjG
+        Where("token IN ?", tokens).
         Find(&results).Error; err != nil {
         ir.log.Error("Failed to fetch invitations by tokens", "error", err)
         return nil, err
