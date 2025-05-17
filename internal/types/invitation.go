@@ -49,7 +49,10 @@ type Invitation struct {
   AvatarURL           string                    `gorm:"column:avatar_url" json:"avatarURL"`
 
   AcceptedAt          *time.Time                 `gorm:"column:accepted_at" json:"accepted_at,omitempty"`
+  RejectedAt          *time.Time                 `gorm:"column:rejected_at" json:"rejected_at,omitempty"`
+  ExpiredAt           *time.Time                 `gorm:"column:expired_at" json:"expired_at,omitempty"`
   CanceledAt          *time.Time                 `gorm:"column:canceled_at" json:"canceled_at,omitempty"`
+
 
   CreatedAt           time.Time                 `gorm:"not null;default:now()" json:"created_at,omitempty"`
   UpdatedAt           time.Time                 `gorm:"not null;default:now()" json:"updated_at,omitempty"`

@@ -37,8 +37,7 @@ type InvitationService interface {
 	ResendInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	resendInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) (*types.Invitation, error)
 	DeleteInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
-	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error
-	canDeleteInvitation(inv *types.Invitation) bool
+	deleteInvitationLogic(ctx context.Context, tx *gorm.DB, invID uuid.UUID) error canDeleteInvitation(inv *types.Invitation) bool
 	ValidateInvitationToken(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error)
 	ExpirePendingInvitations(ctx context.Context, tx *gorm.DB) (int64, error)
 	expirePendingInvitationsLogic(ctx context.Context, tx *gorm.DB) (int64, error)
@@ -427,7 +426,7 @@ func readFileAsBase64(path string) (string, error) {
 func (is *invitationService) UpdateInvitation(ctx context.Context, tx *gorm.DB, invID uuid.UUID, newName, newMessage string) (*types.Invitation, error) {
 	if tx == nil {
 		var out *types.Invitation
-		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm) error {
+		err := is.db.WithContext(ctx).Transaction(func(innerTx *gorm.DB) error {
 			updated, uErr := is.updateInvitationLogic(ctx, innerTx, invID, newName, newMessage)
 			if uErr != nil {
 				return uErr
@@ -455,10 +454,10 @@ func (is *invitationService) updateInvitationLogic(ctx context.Context, tx *gorm
 	if !is.canUpdateInvitation(inv) {
 		return nil, fmt.Errorf("invitation cannot be updated in status: %s", inv.Status)
 	}
-	if newName != nil && newName != "" {
+	if newName != "" && newName != nil {
 		inv.Name = &newName
 	}
-	if newMessage != nil && newMessage != "" {
+	if newMessage != "" && newMessage != nil {
 		inv.Message = &newMessage
 	}
 	updated, err := is.invitationRepo.Update(ctx, tx, []*types.Invitation{inv})

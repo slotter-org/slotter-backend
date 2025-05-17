@@ -32,6 +32,7 @@ const (
 	SSEEventInvitationResent	 SSEEvent = "InvitationResent"
 	SSEEventInvitationDeleted  SSEEvent = "InvitationDeleted"
 	SSEEventInvitationExpired	 SSEEvent = "InvitationExpired"
+	SSEEventInvitationUpdated	 SSEEvent = "InvitationUpdated"
 )
 
 type SSEMessage struct {
