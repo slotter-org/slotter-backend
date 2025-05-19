@@ -10,6 +10,9 @@ func ParseInputString(input string) string {
 }
 
 func ParseInputStringPtr(input *string) *string {
+	if input == nil {
+		return nil
+	}
 	normalized := strings.ToLower(strings.TrimSpace(*input))
 	return &normalized
 }
