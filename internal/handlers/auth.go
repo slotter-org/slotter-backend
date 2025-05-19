@@ -91,12 +91,10 @@ func (ah *AuthHandler) RegisterWithInvitation(c *gin.Context) {
   }
   user := types.User{
     Email: req.Email,
+    PhoneNumber: &"",
     FirstName: req.FirstName,
     LastName: req.LastName,
     Password: req.Password,
-  }
-  if req.PhoneNumber != "" {
-    user.PhoneNumber = &req.PhoneNumber
   }
   ctx := c.Request.Context()
   err := ah.authService.RegisterUserWithInvitationToken(ctx, &user, req.Token, req.NewCompanyName)
