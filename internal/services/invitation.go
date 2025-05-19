@@ -316,6 +316,7 @@ func (is *invitationService) sendInvitationLogic(ctx context.Context, tx *gorm.D
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
 				Event: sse.SSEEventInvitationCreated,
+				Data: final,
 			})
 		}
 	}
@@ -472,6 +473,7 @@ func (is *invitationService) updateInvitationLogic(ctx context.Context, tx *gorm
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
 				Event: sse.SSEEventInvitationUpdated,
+				Data: final,
 			})
 		}
 	}
@@ -556,6 +558,7 @@ func (is *invitationService) updateInvitationRoleLogic(ctx context.Context, tx *
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
 				Event: sse.SSEEventInvitationUpdated,
+				Data: final,
 			})
 		}
 	}
@@ -609,6 +612,7 @@ func (is *invitationService) cancelInvitationLogic(ctx context.Context, tx *gorm
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
 				Event: sse.SSEEventInvitationCanceled,
+				Data: final,
 			})
 		}
 	}
@@ -701,6 +705,7 @@ func (is *invitationService) resendInvitationLogic(ctx context.Context, tx *gorm
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
 				Event:   sse.SSEEventInvitationResent,
+				Data: final,
 			})
 		}
 	}
@@ -738,6 +743,7 @@ func (is *invitationService) deleteInvitationLogic(ctx context.Context, tx *gorm
 			ssd.AppendMessage(sse.SSEMessage{
 				Channel: channel,
 				Event: sse.SSEEventInvitationDeleted,
+				Data: inv,
 			})
 		}
 	}

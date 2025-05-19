@@ -328,6 +328,7 @@ func (as *authService) createFinalUser(ctx context.Context, tx *gorm.DB, user *t
       ssd.AppendMessage(sse.SSEMessage{
         Channel: "company:" + user.CompanyID.String(),
         Event: sse.SSEEventUserJoined,
+        Data: user,
       })
     }
   }
@@ -437,6 +438,7 @@ func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user
         ssd.AppendMessage(sse.SSEMessage{
           Channel: channel,
           Event: sse.SSEEventInvitationAccepted,
+          Data: inv,
         })
       }
     }

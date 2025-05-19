@@ -36,8 +36,9 @@ const (
 )
 
 type SSEMessage struct {
-	Channel string   `json:"channel"`
-	Event   SSEEvent `json:"event"`
+	Channel string			`json:"channel"`
+	Event   SSEEvent		`json:"event"`
+	Data		any					`json:"data,omitempty"`
 }
 
 type SSEClient struct {

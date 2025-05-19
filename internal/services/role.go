@@ -157,6 +157,7 @@ func (rs *roleService) CreateLoggedIn(ctx context.Context, tx *gorm.DB, name str
             sseData.AppendMessage(sse.SSEMessage{
                 Channel: channel,
                 Event: sse.SSEEventRoleCreated,
+                Data: role,
             })
         }
     }
@@ -316,6 +317,7 @@ func (rs *roleService) UpdatePermissions(ctx context.Context, tx *gorm.DB, roleI
             sseData.AppendMessage(sse.SSEMessage{
                 Channel: channel,
                 Event: sse.SSEEventRoleUpdated,
+                Data: updatedRole,
             })
         }
     }
@@ -416,6 +418,7 @@ func (rs *roleService) UpdateRole(ctx context.Context, tx *gorm.DB, roleID uuid.
             sseData.AppendMessage(sse.SSEMessage{
                 Channel: channel,
                 Event: sse.SSEEventRoleUpdated,
+                Data: updatedRole,
             })
         }
     }
@@ -512,6 +515,7 @@ func (rs *roleService) DeleteRole(ctx context.Context, tx *gorm.DB, roleID uuid.
                 ssd.AppendMessage(sse.SSEMessage{
                     Channel: channel,
                     Event: sse.SSEEventRoleDeleted,
+                    Data: theRole,
                 })
             }
         }
