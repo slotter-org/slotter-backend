@@ -17,6 +17,7 @@ type InvitationEmailData struct {
 	Logo						string
 	InvitationLink 	string
 	AvatarURL 			string
+	RecipientName		string
 	InvitationType 	InvitationType
 	WmsName 				string
 	CompanyName			string
