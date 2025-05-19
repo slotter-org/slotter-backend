@@ -193,7 +193,7 @@ func (is *invitationService) sendInvitationLogic(ctx context.Context, tx *gorm.D
 
 	var hasPermission bool
 	for _, perm := range role.Permissions {
-		if perm.PermissionType == "manage_invitations" {
+		if perm.PermissionType == "create_invitations" {
 			hasPermission = true
 			break
 		}
