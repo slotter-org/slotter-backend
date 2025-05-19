@@ -52,9 +52,9 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
   api := router.Group("/api")
   {
     api.POST("/register", cfg.AuthHandler.Register)
-    api.POST("/invitation/register", cfg.AuthHandler.RegisterWithInvitation)
+    api.Use(middleware.AttachRequestContext()).POST("/invitation/register", cfg.AuthHandler.RegisterWithInvitation)
     api.POST("/login", cfg.AuthHandler.Login)
-    api.POST("/invitation/validtoken", cfg.InvitationHandler.ValidateInvitationToken)
+    api.Use(middleware.AttachRequestContext()).POST("/invitation/validtoken", cfg.InvitationHandler.ValidateInvitationToken)
   }
 
 
