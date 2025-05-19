@@ -63,6 +63,7 @@ type authService struct {
   roleRepo          repos.RoleRepo
   roleService       RoleService
   permissionRepo    repos.PermissionRepo
+  invitationRepo    repos.InvitationRepo
   avatarService     AvatarService
   userTokenRepo     repos.UserTokenRepo
   jwtSecretKey      string
@@ -79,6 +80,7 @@ func NewAuthService(
   roleRepo          repos.RoleRepo,
   roleService       RoleService,
   permissionRepo    repos.PermissionRepo,
+  invitationRepo    repos.InvitationRepo,
   avatarService     AvatarService,
   userTokenRepo     repos.UserTokenRepo,
   jwtSecretKey      string,
@@ -95,6 +97,7 @@ func NewAuthService(
     roleRepo:       roleRepo,
     roleService:    roleService,
     permissionRepo: permissionRepo,
+    invitationRepo: invitationRepo,
     avatarService:  avatarService,
     userTokenRepo:  userTokenRepo,
     jwtSecretKey:   jwtSecretKey,
@@ -315,7 +318,7 @@ func (as *authService) createFinalUser(ctx context.Context, tx *gorm.DB, user *t
     return fmt.Errorf("Failure to create user in DB")
   }
   ssd := ssedata.GetSSEData(ctx)
-  if sdd != nil {
+  if ssd != nil {
     if user.UserType == "wms" && user.WmsID != nil && *user.WmsID != uuid.Nil {
       ssd.AppendMessage(sse.SSEMessage{
         Channel: "wms:" + user.WmsID.String(),
@@ -332,7 +335,6 @@ func (as *authService) createFinalUser(ctx context.Context, tx *gorm.DB, user *t
 }
 
 func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string, newCompanyName string) error {
-  var invitationType string
   as.log.Info("Starting RegisterUserWithInvitationToken now...")
   as.log.Debug("User object for invitation-based registration:", "user", user, "token", token)
 
@@ -366,13 +368,12 @@ func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user
       if user.PhoneNumber == nil || *user.PhoneNumber == "" {
         return fmt.Errorf("this invitation is for phone '%s' but user provided none")
       }
-      if !strings.EqualFold(user.PhoneNumber, *inv.PhoneNumber) {
+      if !strings.EqualFold(*user.PhoneNumber, *inv.PhoneNumber) {
         return fmt.Errorf("this invitation is bound to phone number '%s'; provided phone '%s' does not match", *inv.PhoneNumber, user.PhoneNumber)
       }
     }
     switch inv.InvitationType {
     case types.InvitationTypeJoinWms:
-      invitationType = types.InvitationTypeJoinWms
       if inv.WmsID == nil || *inv.WmsID == uuid.Nil {
         return fmt.Errorf("invitation is 'join_wms' but has no valid WmsID attatched")
       }
@@ -385,7 +386,6 @@ func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user
         return err
       }
     case types.InvitationTypeJoinCompany:
-      invitationType = types.InvitationTypeJoinCompany
       if inv.CompanyID == nil || *inv.CompanyID == uuid.Nil {
         return fmt.Errorf("invitation is 'join_company' but has no valid CompanyID attatched")
       }
@@ -398,7 +398,6 @@ func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user
         return err
       }
     case types.InvitationTypeJoinWmsWithNewCompany:
-      invitationType = types.InvitationTypeJoinWmsWithNewCompany
       if inv.WmsID == nil || *inv.WmsID == uuid.Nil {
         return fmt.Errorf("invitation is type 'join_wms_with_new_company' but has no valid WmsID attached")
       }

@@ -125,7 +125,7 @@ func main() {
     os.Exit(1)
   }
   roleService := services.NewRoleService(thePG, log, roleRepo, permissionRepo, userRepo, avatarService)
-  authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, roleService, permissionRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
+  authService := services.NewAuthService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo, roleService, permissionRepo, invitationRepo, avatarService, userTokenRepo, jwtSecretKey, time.Duration(accessTokenTTL)*time.Second, time.Duration(refreshTokenTTL)*time.Second)
   meService := services.NewMeService(thePG, log, userRepo, wmsRepo, companyRepo, roleRepo)
   myCompanyService := services.NewMyCompanyService(thePG, log, warehouseRepo, companyRepo, userRepo, roleRepo, invitationRepo, permissionRepo)
   myWmsService := services.NewMyWmsService(thePG, log, companyRepo, wmsRepo, userRepo, roleRepo, invitationRepo, permissionRepo)
@@ -136,7 +136,7 @@ func main() {
 
   //  Handler Setup
   log.Info("Setting Up Handlers from Main now...")
-  authHandler := handlers.NewAuthHandler(authService)
+  authHandler := handlers.NewAuthHandler(authService, sseHub)
   meHandler := handlers.NewMeHandler(meService)
   myCompanyHandler := handlers.NewMyCompanyHandler(myCompanyService)
   myWmsHandler := handlers.NewMyWmsHandler(myWmsService)

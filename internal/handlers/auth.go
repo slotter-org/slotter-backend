@@ -8,14 +8,17 @@ import (
 
   "github.com/slotter-org/slotter-backend/internal/types"
   "github.com/slotter-org/slotter-backend/internal/services"
+  "github.com/slotter-org/slotter-backend/internal/sse"
+  "github.com/slotter-org/slotter-backend/internal/ssedata"
 )
 
 type AuthHandler struct {
   authService     services.AuthService
+  sseHub          *sse.SSEHub
 }
 
-func NewAuthHandler(authService services.AuthService) *AuthHandler {
-  return &AuthHandler{authService: authService}
+func NewAuthHandler(authService services.AuthService, hub *sse.SSEHub) *AuthHandler {
+  return &AuthHandler{authService: authService, sseHub: hub}
 }
 
 func (ah *AuthHandler) Register(c *gin.Context) {
