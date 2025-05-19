@@ -331,7 +331,7 @@ func (as *authService) createFinalUser(ctx context.Context, tx *gorm.DB, user *t
   return nil
 }
 
-func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string, newCompanyName string) {
+func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string, newCompanyName string) error {
   var invitationType string
   as.log.Info("Starting RegisterUserWithInvitationToken now...")
   as.log.Debug("User object for invitation-based registration:", "user", user, "token", token)
