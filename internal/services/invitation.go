@@ -91,7 +91,7 @@ func NewInvitationService(
 	}
 	frontEndURL := os.Getenv("SLOTTER_FRONT_END_URL")
 	if frontEndURL == "" {
-		frontEndURL = "https://www.slotter.ai/register"
+		frontEndURL = "https://www.slotter.ai"
 		serviceLog.Warn("SLOTTER_FRONT_END_URL not set; using faillback front end URL.")
 	}
 	return &invitationService{

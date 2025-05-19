@@ -16,6 +16,8 @@ import (
   "github.com/slotter-org/slotter-backend/internal/types"
   "github.com/slotter-org/slotter-backend/internal/repos"
   "github.com/slotter-org/slotter-backend/internal/requestdata"
+  "github.com/slotter-org/slotter-backend/internal/ssedata"
+  "github.com/slotter-org/slotter-backend/internal/sse"
   "github.com/slotter-org/slotter-backend/internal/utils"
 )
 
@@ -29,6 +31,7 @@ type JWTClaims struct {
 
 type AuthService interface {
   RegisterUser(ctx context.Context, user *types.User, newCompanyName, newWmsName string) error
+  RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string) error
   Login(ctx context.Context, email, password string) (string, string, error)
   Refresh(ctx context.Context) (string, string, error)
   Logout(ctx context.Context) error
@@ -303,6 +306,237 @@ func (as *authService) createFinalUser(ctx context.Context, tx *gorm.DB, user *t
   if len(createdUsers) == 0 {
     as.log.Warn("Failure to actually create user from AuthService")
     return fmt.Errorf("Failure to create user in DB")
+  }
+  ssd := ssedata.GetSSEData(ctx)
+  if sdd != nil {
+    if user.UserType == "wms" && user.WmsID != nil && *user.WmsID != uuid.Nil {
+      ssd.AppendMessage(sse.SSEMessage{
+        Channel: "wms:" + user.WmsID.String(),
+        Event: sse.SSEEventUserJoined,
+      })
+    } else if user.UserType == "company" && user.CompanyID != nil && *user.CompanyID != uuid.Nil {
+      ssd.AppendMessage(sse.SSEMessage{
+        Channel: "company:" + user.CompanyID.String(),
+        Event: sse.SSEEventUserJoined,
+      })
+    }
+  }
+  return nil
+}
+
+func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string, newCompanyName string) {
+  var invitationType string
+  as.log.Info("Starting RegisterUserWithInvitationToken now...")
+  as.log.Debug("User object for invitation-based registration:", "user", user, "token", token)
+
+  if token == "" {
+    return fmt.Errorf("invitation token is required")
+  }
+  if user == nil {
+    return fmt.Errorf("user object is nil")
+  }
+  utils.NormalizeUserFields(ctx, user)
+  if err := utils.InputValidation(ctx, "registration", as.userRepo, as.log, user, "", ""); err != nil {
+    return err
+  }
+  if err := utils.HashPassword(ctx, as.log, user); err != nil {
+    return err
+  }
+  return as.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+    inv, err := as.validateInvitationForRegistration(ctx, tx, token)
+    if err != nil {
+      as.log.Warn("Invitation invalid or expired for token based registration", "error", err)
+      return err
+    }
+    if inv.Email != nil && *inv.Email != "" {
+      if user.Email == "" {
+        return fmt.Errorf("this invitation is for email '%s' but user provided none")
+      }
+      if !strings.EqualFold(user.Email, *inv.Email) {
+        return fmt.Errorf("this invitation is bound to email '%s'; provided email '%s' does not match", *inv.Email, user.Email)
+      }
+    } else if inv.PhoneNumber != nil && *inv.PhoneNumber != "" {
+      if user.PhoneNumber == nil || *user.PhoneNumber == "" {
+        return fmt.Errorf("this invitation is for phone '%s' but user provided none")
+      }
+      if !strings.EqualFold(user.PhoneNumber, *inv.PhoneNumber) {
+        return fmt.Errorf("this invitation is bound to phone number '%s'; provided phone '%s' does not match", *inv.PhoneNumber, user.PhoneNumber)
+      }
+    }
+    switch inv.InvitationType {
+    case types.InvitationTypeJoinWms:
+      invitationType = types.InvitationTypeJoinWms
+      if inv.WmsID == nil || *inv.WmsID == uuid.Nil {
+        return fmt.Errorf("invitation is 'join_wms' but has no valid WmsID attatched")
+      }
+      user.UserType = "wms"
+      user.WmsID = inv.WmsID
+      if inv.RoleID != nil && *inv.RoleID != uuid.Nil {
+        user.RoleID = inv.RoleID
+      }
+      if err := as.registerWithWmsLogic(ctx, tx, user); err != nil {
+        return err
+      }
+    case types.InvitationTypeJoinCompany:
+      invitationType = types.InvitationTypeJoinCompany
+      if inv.CompanyID == nil || *inv.CompanyID == uuid.Nil {
+        return fmt.Errorf("invitation is 'join_company' but has no valid CompanyID attatched")
+      }
+      user.UserType = "company"
+      user.CompanyID = inv.CompanyID
+      if inv.RoleID != nil && *inv.RoleID != uuid.Nil {
+        user.RoleID = inv.RoleID
+      }
+      if err := as.registerWithCompanyLogic(ctx, tx, user); err != nil {
+        return err
+      }
+    case types.InvitationTypeJoinWmsWithNewCompany:
+      invitationType = types.InvitationTypeJoinWmsWithNewCompany
+      if inv.WmsID == nil || *inv.WmsID == uuid.Nil {
+        return fmt.Errorf("invitation is type 'join_wms_with_new_company' but has no valid WmsID attached")
+      }
+      user.UserType = "company"
+      user.WmsID = inv.WmsID
+      if inv.RoleID != nil && *inv.RoleID != uuid.Nil {
+        user.RoleID = inv.RoleID
+      }
+      if newCompanyName == "" {
+        return fmt.Errorf("cannot create new company under wms without a new company name")
+      }
+      if err := as.registerNewCompanyUnderWmsLogic(ctx, tx, user, normalization.ParseInputString(newCompanyName)); err != nil {
+        return err
+      }
+    default:
+      return fmt.Errorf("unknown invitation type '%s'", inv.InvitationType)
+    }
+    if err := as.createFinalUser(ctx, tx, user); err != nil {
+      return err
+    }
+    inv.Status = types.InvitationStatusAccepted
+    now := time.Now()
+    inv.AcceptedAt = &now
+    if _, err := as.invitationRepo.Update(ctx, tx, []*types.Invitation{inv}); err != nil {
+      return fmt.Errorf("failed to mark invitation as accepted: %w", err)
+    }
+    if ssd := ssedata.GetSSEData(ctx); ssd != nil {
+      var channel string
+      if user.UserType == "wms" && user.WmsID != nil && *user.WmsID != uuid.Nil {
+        channel = "wms:" + user.WmsID.String()
+      } else if user.UserType == "company" && user.CompanyID != nil && *user.CompanyID != uuid.Nil {
+        channel = "company:" + user.CompanyID.String()
+      }
+      if channel != "" {
+        ssd.AppendMessage(sse.SSEMessage{
+          Channel: channel,
+          Event: sse.SSEEventInvitationAccepted,
+        })
+      }
+    }
+    as.log.Info("Successfully registered user with invitation token", "userID", user.ID)
+    return nil
+  })
+}
+
+func (as *authService) validateInvitationForRegistration(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error) {
+  inv, err := as.invitationRepo.GetByTokens(ctx, tx, []string{token})
+  if err != nil {
+    return nil, fmt.Errorf("error loading invitation by token: %w", err)
+  }
+  if len(inv) == 0 {
+    return nil, fmt.Errorf("no invitation found for token")
+  }
+  theInv := inv[0]
+  if theInv.Status != types.InvitationStatusPending {
+    return nil, fmt.Errorf("invitation not pending (status=%s)", theInv.Status)
+  }
+  if time.Now().After(theInv.ExpiresAt) {
+    return nil, fmt.Errorf("invitation token is expired")
+  }
+  return theInv, nil
+}
+
+func (as *authService) registerWithWmsLogic(ctx context.Context, tx *gorm.DB, user *types.User) error {
+  if user.WmsID == nil || *user.WmsID == uuid.Nil {
+    return fmt.Errorf("missing WmsID for user")
+  }
+  foundWs, err := as.wmsRepo.GetByIDs(ctx, tx, []uuid.UUID{*user.WmsID})
+  if err != nil {
+    return fmt.Errorf("failed to fetch Wms by id: %w", err)
+  }
+  if len(foundWs) == 0 {
+    return fmt.Errorf("no Wms with that id exists")
+  }
+  theWms := foundWs[0]
+  if user.RoleID == nil || *user.RoleID == uuid.Nil {
+    user.RoleID = theWms.DefaultRoleID
+  }
+  return nil
+}
+
+func (as *authService) registerWithCompanyLogic(ctx context.Context, tx *gorm.DB, user *types.User) error {
+  if user.CompanyID == nil || *user.CompanyID == uuid.Nil {
+    return fmt.Errorf("missing companyID for user")
+  }
+  comps, err := as.companyRepo.GetByIDs(ctx, tx, []uuid.UUID{*user.CompanyID})
+  if err != nil {
+    return fmt.Errorf("failed to fetch company by id: %w", err)
+  }
+  if len(comps) == 0 {
+    return fmt.Errorf("no company with that id exists")
+  }
+  theCompany := comps[0]
+  if user.RoleID == nil || *user.RoleID == uuid.Nil {
+    user.RoleID = theCompany.DefaultRoleID
+  }
+  return nil
+}
+
+func (as *authService) registerNewCompanyUnderWmsLogic(ctx context.Context, tx *gorm.DB, user *types.User, newCoName string) error {
+  if user.WmsID == nil || *user.WmsID == uuid.Nil {
+    return fmt.Errorf("cannot create company under wms with no wmsID")
+  }
+  theCompany := &types.Company{
+    ID: uuid.New(),
+    Name: normalization.ParseInputString(newCoName),
+    WmsID: user.WmsID,
+  }
+  if err := as.avatarService.CreateAndUploadCompanyAvatar(ctx, tx, theCompany); err != nil {
+    return fmt.Errorf("failed to create/upload new company avatar: %w", err)
+  }
+  createdCompanies, cCErr := as.companyRepo.Create(ctx, tx, []*types.Company{theCompany})
+  if cCErr != nil {
+    return fmt.Errorf("failed to create new company under wms: %w", cCErr)
+  }
+  finalCo := createdCompanies[0]
+  user.CompanyID = &finalCo.ID
+  user.WmsID = nil
+  foundUsers, fUErr := as.userRepo.GetByCompanyIDs(ctx, tx, []uuid.UUID{finalCo.ID})
+  if fUErr != nil {
+    return fmt.Errorf("failed to find users in new company: %w", fUErr)
+  }
+  if len(foundUsers) == 0 {
+    adminRole := &types.Role{CompanyID: &finalCo.ID, Name: "admin"}
+    defaultRole := &types.Role{CompanyID: &finalCo.ID, Name: "default"}
+    newRoles, nRErr := as.roleService.Create(ctx, tx, []*types.Role{adminRole, defaultRole})
+    if nRErr != nil {
+      return fmt.Errorf("failed to create admin/default roles for new company: %w", nRErr)
+    }
+    allPerms, aPErr := as.permissionRepo.GetAll(ctx, tx)
+    if aPErr != nil {
+      return fmt.Errorf("failed to get perms for new company roles: %w", aPErr)
+    }
+    if err := as.roleRepo.AssociatePermissions(ctx, tx, []*types.Role{newRoles[0]}, allPerms); err != nil {
+      return fmt.Errorf("failed to associate perms with new admin role: %w", err)
+    }
+    user.RoleID = &newRoles[0].ID
+    finalCo.DefaultRoleID = &newRoles[1].ID
+    if _, uCErr := as.companyRepo.Update(ctx, tx, []*types.Company{finalCo}); uCErr != nil {
+      return fmt.Errorf("failed to update final company: %w", uCErr)
+    }
+  } else {
+    if finalCo.DefaultRoleID != nil && user.RoleID == nil {
+      user.RoleID = finalCo.DefaultRoleID
+    }
   }
   return nil
 }

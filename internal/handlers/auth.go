@@ -67,6 +67,49 @@ func (ah *AuthHandler) Register(c *gin.Context) {
   c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+func (ah *AuthHandler) RegisterWithInvitation(c *gin.Context) {
+  var req struct {
+    Token           string          `json:"token"`
+    Email           string          `json:"email,omitempty"`
+    PhoneNumber     string          `json:"phone_number,omitempty"`
+    FirstName       string          `json:"first_name"`
+    LastName        string          `json:"last_name"`
+    Password        string          `json:"password"`
+    NewCompanyName  string          `json:"new_company_name,omitempty"`
+  }
+  if err := c.ShouldBindJSON(&req); err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+    return
+  }
+  if strings.TrimSpace(req.Token) == "" {
+    c.JSON(http.StatusBadRequest, gin.H{"error": "missing invitation token"})
+    return
+  }
+  user := types.User{
+    Email: req.Email,
+    FirstName: req.FirstName,
+    LastName: req.LastName,
+    Password: req.Password,
+  }
+  if req.PhoneNumber != "" {
+    user.PhoneNumber = &req.PhoneNumber
+  }
+  ctx := c.Request.Context()
+  err := ah.authService.RegisterUserWithInvitationToken(ctx, &user, req.Token, req.NewCompanyName)
+  if err != nil {
+    c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+    return
+  }
+  ssd := ssedata.GetSSEData(ctx)
+  if ssd != nil && len(ssd.Messages) > 0 {
+    for _, msg := range ssd.Messages {
+      ah.sseHub.Broadcast(msg)
+    }
+    ssd.Messages = nil
+  }
+  c.JSON(http.StatusOK, gin.H{"message": "User successfully registered via invitation"})
+}
+
 func (ah *AuthHandler) Login(c *gin.Context) {
   var req struct {
     Email           string          `json:"email"`
