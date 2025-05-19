@@ -4,6 +4,7 @@ import (
   "context"
   "fmt"
   "time"
+  "strings"
 
   "gorm.io/gorm"
   "golang.org/x/crypto/bcrypt"
@@ -31,14 +32,20 @@ type JWTClaims struct {
 
 type AuthService interface {
   RegisterUser(ctx context.Context, user *types.User, newCompanyName, newWmsName string) error
-  RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string) error
+  RegisterUserWithInvitationToken(ctx context.Context, user *types.User, token string, newCompanyName string) error
   Login(ctx context.Context, email, password string) (string, string, error)
   Refresh(ctx context.Context) (string, string, error)
   Logout(ctx context.Context) error
 
   handleWmsRegistration(ctx context.Context, tx *gorm.DB, user *types.User, newWmsName string) error
+  registerWithWmsLogic(ctx context.Context, tx *gorm.DB, user *types.User) error
+  registerWithCompanyLogic(ctx context.Context, tx *gorm.DB, user *types.User) error
+  registerNewCompanyUnderWmsLogic(ctx context.Context, tx *gorm.DB, user *types.User, newCoName string) error
   handleCompanyRegistration(ctx context.Context, tx *gorm.DB, user *types.User, newCompanyName string) error
   createFinalUser(ctx context.Context, tx *gorm.DB, user *types.User) error
+
+  validateInvitationForRegistration(ctx context.Context, tx *gorm.DB, token string) (*types.Invitation, error)
+
 
   generateAccessToken(ctx context.Context, tx *gorm.DB, user *types.User) (string, error)
 
