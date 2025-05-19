@@ -344,6 +344,7 @@ func (as *authService) RegisterUserWithInvitationToken(ctx context.Context, user
   if user == nil {
     return fmt.Errorf("user object is nil")
   }
+  user.userType = "wms"
   utils.NormalizeUserFields(ctx, user)
   if err := utils.InputValidation(ctx, "registration", as.userRepo, as.log, user, "", ""); err != nil {
     return err

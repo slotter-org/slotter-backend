@@ -91,7 +91,7 @@ func (ah *AuthHandler) RegisterWithInvitation(c *gin.Context) {
   }
   user := types.User{
     Email: req.Email,
-    PhoneNumber: &"",
+    PhoneNumber: &req.PhoneNumber,
     FirstName: req.FirstName,
     LastName: req.LastName,
     Password: req.Password,
