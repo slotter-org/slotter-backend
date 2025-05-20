@@ -223,12 +223,28 @@ func (is *invitationService) sendInvitationLogic(ctx context.Context, tx *gorm.D
 			return nil, fmt.Errorf("invalid invitation type for WMS user: %s", inv.InvitationType)
 		}
 		inv.WmsID = user.WmsID
+		wss, err := is.wmsRepo.GetByIDs(ctx, tx, []uuid.UUID{inv.WmsID})
+		if err != nil {
+			return nil, err
+		}
+		if len(wss) == 0 {
+			return nil, fmt.Errorf("wms lookup returned no wms")
+		}
+		inv.Wms = &wss[0]
 
 	case "company":
 		if inv.InvitationType != types.InvitationTypeJoinCompany {
 			return nil, fmt.Errorf("invalid invitation type for Company user: %s", inv.InvitationType)
 		}
 		inv.CompanyID = user.CompanyID
+		cps, err := is.companyRepo.GetByIDs(ctx, tx, []uuid.UUID{inv.CompanyID})
+		if err != nil {
+			return nil, err
+		}
+		if len(cps) == 0 {
+			return nil, fmt.Errorf("company lookup returned no company")
+		}
+		inv.Company = &cps[0]
 
 	default:
 		return nil, fmt.Errorf("unknown user type: %s", user.UserType)
